@@ -10,7 +10,6 @@ export interface CompileInput {
   messages: Message[];
   previousSummary?: string;
   fileOps?: FileOps;
-  customInstructions?: string;
 }
 
 const headers = [
@@ -73,12 +72,6 @@ const SUMMARY_MAX_CHARS = 12_000;
 export const compile = (input: CompileInput): string => {
   const blocks = filterNoise(normalize(input.messages));
   const data = buildSections({ blocks, fileOps: input.fileOps });
-  if (input.customInstructions?.trim()) {
-    data.userPreferences = [
-      `Compaction instruction: ${input.customInstructions.trim()}`,
-      ...data.userPreferences,
-    ].slice(0, 10);
-  }
   const fresh = formatSummary(data);
   const merged = input.previousSummary ? mergePrevious(input.previousSummary, fresh) : fresh;
   const redacted = redact(merged);

@@ -1,10 +1,19 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { convertToLlm } from "@mariozechner/pi-coding-agent";
-import { writeFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 import { compile } from "../core/summarize";
 import type { PiVccCompactionDetails } from "../details";
 
+const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-vcc-config.json");
+
+const loadConfig = (): { debug?: boolean } => {
+  try { return JSON.parse(readFileSync(CONFIG_PATH, "utf-8")); } catch { return {}; }
+};
+
 const dbg = (data: Record<string, unknown>) => {
+  if (!loadConfig().debug) return;
   try { writeFileSync("/tmp/pi-vcc-debug.json", JSON.stringify(data, null, 2)); } catch {}
 };
 
@@ -62,7 +71,7 @@ function buildOwnCut(branchEntries: any[]): { messages: any[]; firstKeptEntryId:
 
 export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
   pi.on("session_before_compact", (event) => {
-    const { preparation, customInstructions, branchEntries } = event;
+    const { preparation, branchEntries } = event;
 
     let agentMessages = preparation.messagesToSummarize;
     let firstKeptEntryId = preparation.firstKeptEntryId;
@@ -85,7 +94,6 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
         readFiles: [...preparation.fileOps.read],
         modifiedFiles: [...preparation.fileOps.written, ...preparation.fileOps.edited],
       },
-      customInstructions,
     });
 
     const branchIds = branchEntries.map((e: any) => e.id);

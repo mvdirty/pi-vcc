@@ -45,14 +45,6 @@ describe("compile", () => {
     });
     expect(r).toContain("config.ts");
   });
-
-  it("includes customInstructions in decisions", () => {
-    const r = compile({
-      messages: [userMsg("check")],
-      customInstructions: "Keep the summary brief",
-    });
-    expect(r).toContain("Compaction instruction: Keep the summary brief");
-  });
 });
 
 
