@@ -5,7 +5,7 @@ export const registerPiVccCommand = (pi: ExtensionAPI) => {
     description: "Compact conversation with pi-vcc structured summary",
     handler: async (args, ctx) => {
       const instructions = args.trim() || undefined;
-      await ctx.actions.compact({ customInstructions: instructions });
+      ctx.compact({ customInstructions: instructions });
       ctx.ui.notify("Compacted with pi-vcc", "info");
     },
   });
