@@ -23,6 +23,7 @@ describe("compile", () => {
     });
     expect(r).toContain("[Session Goal]");
     expect(r).toContain("Fix login bug");
+    expect(r).toContain("[Actions Taken]");
     expect(r).toContain("[Files And Changes]");
     expect(r).toContain("auth.ts");
   });
@@ -33,7 +34,7 @@ describe("compile", () => {
       previousSummary: "[Session Goal]\n- Original goal",
     });
     expect(r).toContain("[Session Goal]\n- Original goal");
-    expect(r).toContain("[Current State]");
+    expect(r).toContain("[Key Conversation Turns]");
     expect(r).not.toContain("[Delta Since Last Compaction]");
   });
 

@@ -14,9 +14,9 @@ export interface CompileInput {
 }
 
 const headers = [
-  "Session Goal", "Current State", "What Was Done",
-  "Important Findings", "Files And Changes", "Open Problems",
-  "Decisions And Constraints", "User Preferences", "Next Best Steps",
+  "Session Goal", "Key Conversation Turns", "Actions Taken",
+  "Important Evidence", "Files And Changes", "Outstanding Context",
+  "User Preferences",
 ];
 
 const sectionOf = (text: string, header: string): string => {
@@ -74,9 +74,9 @@ export const compile = (input: CompileInput): string => {
   const blocks = filterNoise(normalize(input.messages));
   const data = buildSections({ blocks, fileOps: input.fileOps });
   if (input.customInstructions?.trim()) {
-    data.decisions = [
+    data.userPreferences = [
       `Compaction instruction: ${input.customInstructions.trim()}`,
-      ...data.decisions,
+      ...data.userPreferences,
     ].slice(0, 10);
   }
   const fresh = formatSummary(data);

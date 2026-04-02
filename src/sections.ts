@@ -1,13 +1,11 @@
 export interface SectionData {
   sessionGoal: string[];
-  currentState: string[];
-  whatWasDone: string[];
-  importantFindings: string[];
+  keyConversationTurns: string[];
+  actionsTaken: string[];
+  importantEvidence: string[];
   filesRead: string[];
   filesModified: string[];
   filesCreated: string[];
-  openProblems: string[];
-  decisions: string[];
+  outstandingContext: string[];
   userPreferences: string[];
-  nextSteps: string[];
 }

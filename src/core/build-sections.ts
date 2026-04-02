@@ -5,7 +5,6 @@ import type { SectionData } from "../sections";
 import { extractGoals } from "../extract/goals";
 import { extractFiles } from "../extract/files";
 import { extractFindings } from "../extract/findings";
-import { extractDecisions } from "../extract/decisions";
 import { extractPreferences } from "../extract/preferences";
 import { extractPath } from "./tool-args";
 
@@ -13,8 +12,6 @@ export interface BuildSectionsInput {
   blocks: NormalizedBlock[];
   fileOps?: FileOps;
 }
-
-// --- What Was Done: VCC-style collapsed tool calls ---
 
 const TOOL_SUMMARY_FIELDS: Record<string, string> = {
   Read: "file_path", Edit: "file_path", Write: "file_path",
@@ -39,7 +36,7 @@ const toolOneLiner = (name: string, args: Record<string, unknown>): string => {
   return `* ${name}`;
 };
 
-const extractWhatWasDone = (blocks: NormalizedBlock[]): string[] => {
+const extractActionsTaken = (blocks: NormalizedBlock[]): string[] => {
   const raw: string[] = [];
   for (const b of blocks) {
     if (b.kind === "tool_call") raw.push(toolOneLiner(b.name, b.args));
@@ -48,96 +45,61 @@ const extractWhatWasDone = (blocks: NormalizedBlock[]): string[] => {
   for (const d of raw) counts.set(d, (counts.get(d) ?? 0) + 1);
   return [...counts.entries()]
     .map(([k, v]) => (v > 1 ? `${k} x${v}` : k))
-    .slice(0, 30);
+    .slice(0, 20);
 };
-
-// --- Current State: assistant prose + capped tool results ---
 
 const FILLER_RE = /^(ok|sure|done|got it|alright|let me|i('ll| will)|here'?s|understood)/i;
-const CODE_NOISE_RE = /^[\s{}()\[\];,=<>|&!*]+$|^var\s|^\w+=\{|function\s*\w*\(|=>\s*\{/;
-
-const extractCurrentState = (blocks: NormalizedBlock[]): string[] => {
-  const state: string[] = [];
-  const tail = blocks.slice(-12);
-
-  for (const b of tail) {
-    if (b.kind === "assistant") {
-      for (const line of nonEmptyLines(b.text)) {
-        if (FILLER_RE.test(line)) continue;
-        if (CODE_NOISE_RE.test(line)) continue;
-        if (line.length < 8) continue;
-        state.push(clip(line, 200));
-      }
-    }
-  }
-
-  return state.slice(-5);
-};
-
-// --- Open Problems: only clear blockers, from tail of conversation ---
-
 const BLOCKER_RE =
   /\b(fail(ed|s|ure|ing)?|broken|cannot|can't|won't work|does not work|doesn't work|still (broken|failing|wrong)|blocked|blocker|not (fixed|resolved|working)|crash(es|ed|ing)?)\b/i;
 
-const extractOpenProblems = (blocks: NormalizedBlock[]): string[] => {
-  const problems: string[] = [];
-  const tail = blocks.slice(-40);
+const TRUNCATE_TOKENS = 128;
+
+const truncateText = (text: string, limit = TRUNCATE_TOKENS): string => {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= limit) return text;
+  return words.slice(0, limit).join(" ") + "...(truncated)";
+};
+
+const extractKeyConversationTurns = (blocks: NormalizedBlock[]): string[] => {
+  const turns: string[] = [];
+  const conversational = blocks.filter(
+    (b) => b.kind === "user" || b.kind === "assistant",
+  );
+  const recent = conversational.slice(-12);
+
+  for (const b of recent) {
+    const text = b.text.trim();
+    if (!text || text.length < 10) continue;
+    if (b.kind === "user" && FILLER_RE.test(text)) continue;
+    const prefix = b.kind === "user" ? "[user] " : "[assistant] ";
+    turns.push(prefix + truncateText(text, TRUNCATE_TOKENS));
+  }
+
+  return turns.slice(-8);
+};
+
+const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
+  const items: string[] = [];
+  const tail = blocks.slice(-20);
 
   for (const b of tail) {
     if (b.kind === "tool_result" && b.isError) {
-      problems.push(`[${b.name}] ${firstLine(b.text, 150)}`);
+      items.push(`[${b.name}] ${firstLine(b.text, 150)}`);
+      continue;
     }
 
-    if (b.kind === "assistant" && BLOCKER_RE.test(b.text)) {
+    if (b.kind === "assistant" || b.kind === "user") {
       for (const line of nonEmptyLines(b.text)) {
-        if (BLOCKER_RE.test(line) && line.length > 15) {
-          problems.push(clip(line, 150));
-          break;
-        }
-      }
-    }
-
-    if (b.kind === "user" && BLOCKER_RE.test(b.text)) {
-      for (const line of nonEmptyLines(b.text)) {
-        if (BLOCKER_RE.test(line) && line.length > 15) {
-          problems.push(`[user] ${clip(line, 150)}`);
-          break;
-        }
+        if (!BLOCKER_RE.test(line)) continue;
+        if (line.length < 15) continue;
+        const clipped = b.kind === "user" ? `[user] ${clip(line, 150)}` : clip(line, 150);
+        if (!items.includes(clipped)) items.push(clipped);
+        break;
       }
     }
   }
 
-  return [...new Set(problems)].slice(0, 5);
-};
-
-// --- Next Steps: list-form + prose fallback ---
-
-const extractNextSteps = (blocks: NormalizedBlock[]): string[] => {
-  const steps: string[] = [];
-  const assistants = blocks.filter((b) => b.kind === "assistant");
-  const recent = assistants.slice(-5);
-
-  for (let i = recent.length - 1; i >= 0 && steps.length < 5; i--) {
-    for (const t of nonEmptyLines(recent[i].text)) {
-      if (/^\d+[\.)\]]\s/.test(t) || /^-\s/.test(t)) {
-        const clipped = clip(t, 200);
-        if (!steps.includes(clipped)) steps.push(clipped);
-      }
-    }
-    if (steps.length > 0) break;
-  }
-
-  if (steps.length === 0 && recent.length > 0) {
-    const last = recent[recent.length - 1];
-    const lines = nonEmptyLines(last.text);
-    for (const line of lines.slice(-3)) {
-      if (line.length > 15 && !FILLER_RE.test(line) && !CODE_NOISE_RE.test(line)) {
-        steps.push(clip(line, 200));
-      }
-    }
-  }
-
-  return steps.slice(0, 5);
+  return items.slice(0, 5);
 };
 
 export const buildSections = (input: BuildSectionsInput): SectionData => {
@@ -145,19 +107,13 @@ export const buildSections = (input: BuildSectionsInput): SectionData => {
   const fa = extractFiles(blocks, fileOps);
   return {
     sessionGoal: extractGoals(blocks),
-    currentState: extractCurrentState(blocks),
-    whatWasDone: extractWhatWasDone(blocks),
-    importantFindings: extractFindings(blocks),
+    keyConversationTurns: extractKeyConversationTurns(blocks),
+    actionsTaken: extractActionsTaken(blocks),
+    importantEvidence: extractFindings(blocks),
     filesRead: [...fa.read],
     filesModified: [...fa.modified],
     filesCreated: [...fa.created],
-    openProblems: extractOpenProblems(blocks),
-    decisions: extractDecisions(blocks),
+    outstandingContext: extractOutstandingContext(blocks),
     userPreferences: extractPreferences(blocks),
-    nextSteps: extractNextSteps(blocks),
   };
 };
-
-
-
-

@@ -1,33 +1,27 @@
 import type { NormalizedBlock } from "../types";
-import { clip, nonEmptyLines } from "../core/content";
+import { clip } from "../core/content";
 
-const ERROR_PATTERNS = [
-  /error[:\s]/i,
-  /fail(ed|ure|ing)?[:\s]/i,
-  /exception[:\s]/i,
-  /bug[:\s]/i,
-  /root cause/i,
-  /found that/i,
-  /discovered/i,
-  /confirmed/i,
-  /test(s)?\s+(pass|fail)/i,
-  /lint\s+(pass|fail|error)/i,
-];
+const TRUNCATE_TOKENS = 128;
+const NOISE_TOOLS = new Set(["TodoWrite", "ToolSearch", "Skill"]);
+
+const truncateText = (text: string, limit = TRUNCATE_TOKENS): string => {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= limit) return text;
+  return words.slice(0, limit).join(" ") + "...(truncated)";
+};
 
 export const extractFindings = (blocks: NormalizedBlock[]): string[] => {
-  const findings: string[] = [];
+  const results: string[] = [];
 
   for (const b of blocks) {
-    if (b.kind !== "assistant") continue;
-    for (const line of nonEmptyLines(b.text)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.length < 10) continue;
-      if (ERROR_PATTERNS.some((p) => p.test(trimmed))) {
-        findings.push(clip(trimmed, 200));
-      }
-    }
+    if (b.kind !== "tool_result") continue;
+    if (b.isError) continue;
+    if (NOISE_TOOLS.has(b.name)) continue;
+    const text = b.text.trim();
+    if (!text || text.length < 20) continue;
+    results.push(`[${b.name}] ${truncateText(text, TRUNCATE_TOKENS)}`);
   }
 
-  return [...new Set(findings)].slice(0, 15);
+  return results.slice(-15);
 };
 

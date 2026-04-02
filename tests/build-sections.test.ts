@@ -6,7 +6,7 @@ describe("buildSections", () => {
   it("returns all-empty for no blocks", () => {
     const r = buildSections({ blocks: [] });
     expect(r.sessionGoal).toEqual([]);
-    expect(r.whatWasDone).toEqual([]);
+    expect(r.actionsTaken).toEqual([]);
     expect(r.filesRead).toEqual([]);
   });
 
@@ -14,7 +14,7 @@ describe("buildSections", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "user", text: "Fix the auth bug" },
       { kind: "tool_call", name: "Read", args: { path: "auth.ts" } },
-      { kind: "tool_result", name: "Read", text: "code...", isError: false },
+      { kind: "tool_result", name: "Read", text: "export function auth() { return checkToken(req.headers.authorization); }", isError: false },
       { kind: "assistant", text: "The root cause is a null check" },
       { kind: "tool_call", name: "Edit", args: { path: "auth.ts" } },
       { kind: "tool_result", name: "Edit", text: "ok", isError: false },
@@ -24,10 +24,13 @@ describe("buildSections", () => {
     expect(r.sessionGoal).toContain("Fix the auth bug");
     expect(r.filesRead).toContain("auth.ts");
     expect(r.filesModified).toContain("auth.ts");
-    expect(r.whatWasDone.length).toBeGreaterThan(0);
-    expect(r.whatWasDone[0]).toContain("auth.ts");
-    expect(r.importantFindings.length).toBeGreaterThan(0);
-    expect(r.nextSteps).toContain("- run tests next");
+    expect(r.actionsTaken.length).toBeGreaterThan(0);
+    expect(r.actionsTaken[0]).toContain("auth.ts");
+    expect(r.importantEvidence.length).toBeGreaterThan(0);
+    expect(r.importantEvidence[0]).toContain("[Read]");
+    expect(r.keyConversationTurns.length).toBeGreaterThan(0);
+    expect(r.keyConversationTurns.some((t) => t.startsWith("[user]"))).toBe(true);
+    expect(r.keyConversationTurns.some((t) => t.startsWith("[assistant]"))).toBe(true);
   });
 
   it("uses fileOps to seed file lists", () => {
@@ -46,8 +49,8 @@ describe("buildSections", () => {
       { kind: "tool_call", name: "Read", args: { path: "a.ts" } },
     ];
     const r = buildSections({ blocks });
-    expect(r.whatWasDone.length).toBe(1);
-    expect(r.whatWasDone[0]).toContain("x3");
+    expect(r.actionsTaken.length).toBe(1);
+    expect(r.actionsTaken[0]).toContain("x3");
   });
 });
 

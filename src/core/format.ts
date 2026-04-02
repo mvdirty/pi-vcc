@@ -21,14 +21,12 @@ const filesSection = (data: SectionData): string => {
 export const formatSummary = (data: SectionData): string => {
   const parts = [
     section("Session Goal", data.sessionGoal),
-    section("Current State", data.currentState),
-    section("What Was Done", data.whatWasDone),
-    section("Important Findings", data.importantFindings),
+    section("Key Conversation Turns", data.keyConversationTurns),
+    section("Actions Taken", data.actionsTaken),
+    section("Important Evidence", data.importantEvidence),
     filesSection(data),
-    section("Open Problems", data.openProblems),
-    section("Decisions And Constraints", data.decisions),
+    section("Outstanding Context", data.outstandingContext),
     section("User Preferences", data.userPreferences),
-    section("Next Best Steps", data.nextSteps),
   ];
   return parts.filter(Boolean).join("\n\n");
 };
