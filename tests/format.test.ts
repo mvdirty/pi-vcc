@@ -4,14 +4,9 @@ import type { SectionData } from "../src/sections";
 
 const empty: SectionData = {
   sessionGoal: [],
-  keyConversationTurns: [],
-  actionsTaken: [],
-  importantEvidence: [],
-  filesRead: [],
-  filesModified: [],
-  filesCreated: [],
   outstandingContext: [],
-  userPreferences: [],
+  filesAndChanges: [],
+  briefTranscript: "",
 };
 
 describe("formatSummary", () => {
@@ -19,34 +14,47 @@ describe("formatSummary", () => {
     expect(formatSummary(empty)).toBe("");
   });
 
-  it("formats a single section", () => {
-    const data = { ...empty, sessionGoal: ["Fix login"] };
-    expect(formatSummary(data)).toBe("[Session Goal]\n- Fix login");
-  });
-
-  it("formats files section with subcategories", () => {
+  it("formats a single header section", () => {
     const data = {
       ...empty,
-      filesRead: ["a.ts"],
-      filesModified: ["b.ts"],
+      sessionGoal: ["fix auth bug"],
     };
     const r = formatSummary(data);
-    expect(r).toContain("[Files And Changes]");
-    expect(r).toContain("Read:");
-    expect(r).toContain("  - a.ts");
-    expect(r).toContain("Modified:");
+    expect(r).toContain("[Session Goal]");
+    expect(r).toContain("- fix auth bug");
   });
 
-  it("joins multiple sections with blank line", () => {
+  it("separates header and brief transcript with ---", () => {
     const data = {
       ...empty,
       sessionGoal: ["goal"],
-      outstandingContext: ["context"],
+      briefTranscript: "[user]\ndo something",
     };
     const r = formatSummary(data);
-    expect(r).toContain("\n\n");
+    expect(r).toContain("[Session Goal]");
+    expect(r).toContain("---");
+    expect(r).toContain("[user]\ndo something");
+  });
+
+  it("renders brief transcript alone when no header sections", () => {
+    const data = {
+      ...empty,
+      briefTranscript: "[user]\nhi\n\n[assistant]\nhello",
+    };
+    const r = formatSummary(data);
+    expect(r).toBe("[user]\nhi\n\n[assistant]\nhello");
+    expect(r).not.toContain("---");
+  });
+
+  it("joins multiple header sections with blank line", () => {
+    const data = {
+      ...empty,
+      sessionGoal: ["goal"],
+      outstandingContext: ["blocker"],
+    };
+    const r = formatSummary(data);
     expect(r).toContain("[Session Goal]");
     expect(r).toContain("[Outstanding Context]");
+    expect(r).toContain("\n\n");
   });
 });
-

@@ -7,8 +7,8 @@ export interface FileOps {
 }
 
 export type NormalizedBlock =
-  | { kind: "user"; text: string }
-  | { kind: "assistant"; text: string }
-  | { kind: "tool_call"; name: string; args: Record<string, unknown> }
-  | { kind: "tool_result"; name: string; text: string; isError: boolean }
-  | { kind: "thinking"; text: string; redacted: boolean };
+  | { kind: "user"; text: string; sourceIndex?: number }
+  | { kind: "assistant"; text: string; sourceIndex?: number }
+  | { kind: "tool_call"; name: string; args: Record<string, unknown>; sourceIndex?: number }
+  | { kind: "tool_result"; name: string; text: string; isError: boolean; sourceIndex?: number }
+  | { kind: "thinking"; text: string; redacted: boolean; sourceIndex?: number };

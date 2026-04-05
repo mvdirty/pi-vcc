@@ -42,5 +42,3 @@ export const extractFiles = (
 
   return act;
 };
-
-

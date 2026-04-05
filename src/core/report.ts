@@ -6,11 +6,7 @@ import { renderMessage } from "./render-entries";
 import { searchEntries } from "./search-entries";
 import { type CompileInput, compile } from "./summarize";
 
-const headers = [
-  "Session Goal", "Key Conversation Turns", "Actions Taken",
-  "Important Evidence", "Files And Changes", "Outstanding Context",
-  "User Preferences",
-];
+const SECTION_HEADERS = ["Session Goal", "Files And Changes", "Outstanding Context"];
 
 interface RoleCounts {
   user: number;
@@ -51,11 +47,8 @@ export interface CompactReport {
     sectionCount: number;
     summaryPreview: string;
     goalsCount: number;
-    findingsCount: number;
-    filesCount: number;
     blockersCount: number;
-
-    preferencesCount: number;
+    briefTranscriptLines: number;
   };
   compression: {
     charsBefore: number;
@@ -106,13 +99,17 @@ const inputCharsOf = (messages: Message[]): number =>
     .map((msg, index) => renderMessage(msg, index, true).summary.length)
     .reduce((sum, len) => sum + len, 0);
 
-const topFilesOf = (messages: Message[], fileOps?: CompileInput["fileOps"]): string[] => {
-  const data = buildSections({ blocks: normalize(messages), fileOps });
-  return [
-    ...data.filesModified,
-    ...data.filesCreated,
-    ...data.filesRead,
-  ].filter((file, index, all) => all.indexOf(file) === index).slice(0, 10);
+const topFilesOf = (messages: Message[]): string[] => {
+  const files = new Set<string>();
+  for (const block of normalize(messages)) {
+    if (block.kind === "tool_call") {
+      for (const key of ["path", "file_path", "filePath", "file"]) {
+        const val = block.args[key];
+        if (typeof val === "string") { files.add(val); break; }
+      }
+    }
+  }
+  return [...files].slice(0, 10);
 };
 
 const previewOf = (messages: Message[], edgeCount = 3): string => {
@@ -134,7 +131,14 @@ const previewOf = (messages: Message[], edgeCount = 3): string => {
 };
 
 const sectionCountOf = (summary: string): number =>
-  headers.filter((header) => summary.includes(`[${header}]`)).length;
+  SECTION_HEADERS.filter((header) => summary.includes(`[${header}]`)).length;
+
+const briefLineCountOf = (summary: string): number => {
+  const sep = "\n\n---\n\n";
+  const idx = summary.indexOf(sep);
+  if (idx < 0) return 0;
+  return summary.slice(idx + sep.length).split("\n").length;
+};
 
 const queryTermsOf = (text: string): string[] =>
   (text.match(/[\p{L}\p{N}_./-]{3,}/gu) ?? [])
@@ -155,12 +159,25 @@ const matchesQuery = (text: string, query: string): boolean => {
     .every((term) => hay.includes(term));
 };
 
-const probesOf = (messages: Message[], summary: string, fileOps?: CompileInput["fileOps"]): RecallProbe[] => {
-  const data = buildSections({ blocks: normalize(messages), fileOps });
+const probesOf = (messages: Message[], summary: string): RecallProbe[] => {
+  const blocks = normalize(messages);
+  const data = buildSections({ blocks });
+
+  // Find first file from tool calls
+  let firstFile = "";
+  for (const b of blocks) {
+    if (b.kind === "tool_call") {
+      for (const key of ["path", "file_path", "filePath", "file"]) {
+        if (typeof b.args[key] === "string") { firstFile = b.args[key] as string; break; }
+      }
+      if (firstFile) break;
+    }
+  }
+
   const rawProbes = [
     { label: "goal", text: data.sessionGoal[0] ?? "" },
-    { label: "file", text: [...data.filesModified, ...data.filesCreated, ...data.filesRead][0] ?? "" },
-    { label: "problem", text: data.outstandingContext[0] ?? data.importantEvidence[0] ?? "" },
+    { label: "file", text: firstFile },
+    { label: "problem", text: data.outstandingContext[0] ?? "" },
   ];
 
   const rendered = messages.map((msg, index) => renderMessage(msg, index));
@@ -183,9 +200,9 @@ const probesOf = (messages: Message[], summary: string, fileOps?: CompileInput["
 
 export const buildCompactReport = (input: CompileInput): CompactReport => {
   const summary = compile(input);
-  const data = buildSections({ blocks: normalize(input.messages), fileOps: input.fileOps });
+  const data = buildSections({ blocks: normalize(input.messages) });
   const inputChars = inputCharsOf(input.messages);
-  const topFiles = topFilesOf(input.messages, input.fileOps);
+  const topFiles = topFilesOf(input.messages);
 
   return {
     summary,
@@ -204,10 +221,8 @@ export const buildCompactReport = (input: CompileInput): CompactReport => {
       sectionCount: sectionCountOf(summary),
       summaryPreview: summary,
       goalsCount: data.sessionGoal.length,
-      findingsCount: data.importantEvidence.length,
-      filesCount: data.filesRead.length + data.filesModified.length + data.filesCreated.length,
       blockersCount: data.outstandingContext.length,
-      preferencesCount: data.userPreferences.length,
+      briefTranscriptLines: briefLineCountOf(summary),
     },
     compression: {
       charsBefore: inputChars,
@@ -216,7 +231,7 @@ export const buildCompactReport = (input: CompileInput): CompactReport => {
       messagesBefore: input.messages.length,
     },
     recall: {
-      probes: probesOf(input.messages, summary, input.fileOps),
+      probes: probesOf(input.messages, summary),
     },
   };
 };

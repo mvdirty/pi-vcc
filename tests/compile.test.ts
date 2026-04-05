@@ -12,78 +12,69 @@ describe("compile", () => {
     expect(compile({ messages: [] })).toBe("");
   });
 
-  it("produces structured output from a conversation", () => {
+  it("produces hybrid output with header + brief transcript", () => {
     const r = compile({
       messages: [
         userMsg("Fix login bug"),
         assistantWithToolCall("Read", { path: "auth.ts" }),
-        toolResult("Read", "function login() {}"),
         assistantText("Found the issue.\n1. Fix validation"),
       ],
     });
     expect(r).toContain("[Session Goal]");
     expect(r).toContain("Fix login bug");
-    expect(r).toContain("[Actions Taken]");
-    expect(r).toContain("[Files And Changes]");
-    expect(r).toContain("auth.ts");
+    expect(r).toContain("---");
+    expect(r).toContain("[user]\nFix login bug");
+    expect(r).toContain('* Read "auth.ts"');
+    expect(r).toContain("Found the issue.");
   });
 
-  it("merges by section instead of appending delta blocks", () => {
+  it("merges previous summary goals", () => {
     const r = compile({
-      messages: [assistantText("Current state")],
-      previousSummary: "[Session Goal]\n- Original goal",
+      messages: [userMsg("New task")],
+      previousSummary: "[Session Goal]\n- Original goal\n\n---\n\n[user]\nOriginal goal",
     });
-    expect(r).toContain("[Session Goal]\n- Original goal");
-    expect(r).toContain("[Key Conversation Turns]");
-    expect(r).not.toContain("[Delta Since Last Compaction]");
+    expect(r).toContain("- Original goal");
+    expect(r).toContain("- New task");
   });
 
-  it("passes fileOps through to sections", () => {
-    const r = compile({
-      messages: [userMsg("check")],
-      fileOps: { readFiles: ["config.ts"] },
-    });
-    expect(r).toContain("config.ts");
-  });
-
-  it("re-caps rolling sections after merge", () => {
+  it("appends brief transcript on merge", () => {
     const previousSummary = [
-      "[Actions Taken]",
-      "- * Read \"a.ts\"",
-      "- * Read \"b.ts\"",
-      "- * Read \"c.ts\"",
-      "- * Read \"d.ts\"",
-      "- * Read \"e.ts\"",
-      "- * Read \"f.ts\"",
-      "- * Read \"g.ts\"",
-      "- * Read \"h.ts\"",
-    ].join("\n");
+      "[Session Goal]\n- Original goal",
+      "---",
+      "[user]\nOriginal goal\n\n[assistant]\n* Read \"old.ts\"",
+    ].join("\n\n");
     const r = compile({
       previousSummary,
       messages: [
-        assistantWithToolCall("Read", { path: "i.ts" }),
-        assistantWithToolCall("Read", { path: "j.ts" }),
+        userMsg("Next step"),
+        assistantWithToolCall("Read", { path: "new.ts" }),
       ],
     });
-    expect(r).toContain('[Actions Taken]');
-    expect(r).toContain('+5 actions omitted');
-    expect(r).toContain('* Read "a.ts"');
-    expect(r).toContain('* Read "j.ts"');
-    expect(r).not.toContain('* Read "d.ts"');
-    expect(r).not.toContain('* Read "e.ts"');
-    expect(r).not.toContain('* Read "f.ts"');
+    expect(r).toContain('* Read "old.ts"');
+    expect(r).toContain('* Read "new.ts"');
+    expect(r).toContain("Next step");
   });
 
-  it("flattens multiline evidence into a single bullet line", () => {
+  it("outstanding context is volatile (fresh only)", () => {
+    const previousSummary = "[Outstanding Context]\n- old blocker\n\n---\n\n[user]\nhi";
     const r = compile({
-      messages: [
-        toolResult("bash", "line one\nline two\nline three"),
-      ],
+      previousSummary,
+      messages: [userMsg("continue")],
     });
-    expect(r).toContain('[Important Evidence]');
-    expect(r).toContain('[bash] line one line two line three');
-    expect(r).not.toContain('[bash] line one\nline two');
+    expect(r).not.toContain("old blocker");
+  });
+
+  it("caps long brief transcript with rolling window", () => {
+    // Build a very long previous transcript
+    const longTranscript = Array.from({ length: 200 }, (_, i) =>
+      `[user]\nmessage ${i}`
+    ).join("\n\n");
+    const previousSummary = `[Session Goal]\n- goal\n\n---\n\n${longTranscript}`;
+    const r = compile({
+      previousSummary,
+      messages: [userMsg("latest")],
+    });
+    expect(r).toContain("earlier lines omitted");
+    expect(r).toContain("latest");
   });
 });
-
-

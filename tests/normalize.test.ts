@@ -15,32 +15,32 @@ describe("normalize", () => {
 
   it("normalizes user message (string content)", () => {
     const blocks = normalize([userMsg("fix the bug")]);
-    expect(blocks).toEqual([{ kind: "user", text: "fix the bug" }]);
+    expect(blocks).toEqual([{ kind: "user", text: "fix the bug", sourceIndex: 0 }]);
   });
 
   it("normalizes assistant text message", () => {
     const blocks = normalize([assistantText("done")]);
-    expect(blocks).toEqual([{ kind: "assistant", text: "done" }]);
+    expect(blocks).toEqual([{ kind: "assistant", text: "done", sourceIndex: 0 }]);
   });
 
   it("normalizes assistant string content", () => {
     const msg = { ...assistantText("done"), content: "plain text" } as any;
-    expect(normalize([msg])).toEqual([{ kind: "assistant", text: "plain text" }]);
+    expect(normalize([msg])).toEqual([{ kind: "assistant", text: "plain text", sourceIndex: 0 }]);
   });
 
   it("splits assistant thinking + text", () => {
     const blocks = normalize([assistantWithThinking("result", "hmm")]);
     expect(blocks).toHaveLength(2);
     expect(blocks[0]).toEqual({
-      kind: "thinking", text: "hmm", redacted: false,
+      kind: "thinking", text: "hmm", redacted: false, sourceIndex: 0,
     });
-    expect(blocks[1]).toEqual({ kind: "assistant", text: "result" });
+    expect(blocks[1]).toEqual({ kind: "assistant", text: "result", sourceIndex: 0 });
   });
 
   it("normalizes tool call", () => {
     const blocks = normalize([assistantWithToolCall("Read", { path: "a.ts" })]);
     expect(blocks).toEqual([{
-      kind: "tool_call", name: "Read", args: { path: "a.ts" },
+      kind: "tool_call", name: "Read", args: { path: "a.ts" }, sourceIndex: 0,
     }]);
   });
 
@@ -48,7 +48,7 @@ describe("normalize", () => {
     const blocks = normalize([toolResult("Read", "file contents")]);
     expect(blocks).toEqual([{
       kind: "tool_result", name: "Read",
-      text: "file contents", isError: false,
+      text: "file contents", isError: false, sourceIndex: 0,
     }]);
   });
 
@@ -83,8 +83,8 @@ describe("normalize", () => {
     };
     const blocks = normalize([msg]);
     expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toEqual({ kind: "user", text: "look at this" });
-    expect(blocks[1]).toEqual({ kind: "user", text: "[image: image/png]" });
+    expect(blocks[0]).toEqual({ kind: "user", text: "look at this", sourceIndex: 0 });
+    expect(blocks[1]).toEqual({ kind: "user", text: "[image: image/png]", sourceIndex: 0 });
   });
 
   it("skips unknown message roles gracefully", () => {

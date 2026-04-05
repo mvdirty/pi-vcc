@@ -6,68 +6,54 @@ describe("buildSections", () => {
   it("returns all-empty for no blocks", () => {
     const r = buildSections({ blocks: [] });
     expect(r.sessionGoal).toEqual([]);
-    expect(r.actionsTaken).toEqual([]);
-    expect(r.filesRead).toEqual([]);
+    expect(r.outstandingContext).toEqual([]);
+    expect(r.briefTranscript).toBe("");
   });
 
   it("populates sections from realistic blocks", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "user", text: "Fix the auth bug" },
-      { kind: "tool_call", name: "Read", args: { path: "auth.ts" } },
-      { kind: "tool_result", name: "Read", text: "export function auth() { return checkToken(req.headers.authorization); }", isError: false },
-      { kind: "assistant", text: "The root cause is a null check" },
-      { kind: "tool_call", name: "Edit", args: { path: "auth.ts" } },
+      { kind: "tool_call", name: "Read", args: { file_path: "auth.ts" } },
+      { kind: "tool_result", name: "Read", text: "const x = 1;", isError: false },
+      { kind: "tool_call", name: "Edit", args: { file_path: "auth.ts" } },
       { kind: "tool_result", name: "Edit", text: "ok", isError: false },
       { kind: "assistant", text: "- run tests next" },
     ];
     const r = buildSections({ blocks });
     expect(r.sessionGoal).toContain("Fix the auth bug");
-    expect(r.filesRead).toContain("auth.ts");
-    expect(r.filesModified).toContain("auth.ts");
-    expect(r.actionsTaken.length).toBeGreaterThan(0);
-    expect(r.actionsTaken[0]).toContain("auth.ts");
-    expect(r.importantEvidence.length).toBeGreaterThan(0);
-    expect(r.importantEvidence[0]).toContain("[Read]");
-    expect(r.keyConversationTurns.length).toBeGreaterThan(0);
-    expect(r.keyConversationTurns.some((t) => t.startsWith("[user]"))).toBe(true);
-    expect(r.keyConversationTurns.some((t) => t.startsWith("[assistant]"))).toBe(true);
+    expect(r.briefTranscript).toContain('[user]');
+    expect(r.briefTranscript).toContain('* Read "auth.ts"');
+    expect(r.briefTranscript).toContain('* Edit "auth.ts"');
   });
 
-  it("uses fileOps to seed file lists", () => {
-    const r = buildSections({
-      blocks: [],
-      fileOps: { readFiles: ["x.ts"], modifiedFiles: ["y.ts"] },
-    });
-    expect(r.filesRead).toContain("x.ts");
-    expect(r.filesModified).toContain("y.ts");
-  });
-
-  it("collapses repeated tool calls", () => {
+  it("captures outstanding context from errors", () => {
     const blocks: NormalizedBlock[] = [
-      { kind: "tool_call", name: "Read", args: { path: "a.ts" } },
-      { kind: "tool_call", name: "Read", args: { path: "a.ts" } },
-      { kind: "tool_call", name: "Read", args: { path: "a.ts" } },
+      { kind: "tool_result", name: "bash", text: "FAIL: test broken\ndetails here", isError: true },
     ];
     const r = buildSections({ blocks });
-    expect(r.actionsTaken.length).toBe(1);
-    expect(r.actionsTaken[0]).toContain("x3");
+    expect(r.outstandingContext.length).toBeGreaterThan(0);
+    expect(r.outstandingContext[0]).toContain("FAIL");
   });
 
-  it("caps long action lists with first and last entries", () => {
-    const blocks: NormalizedBlock[] = Array.from({ length: 10 }, (_, i) => ({
-      kind: "tool_call" as const,
-      name: "Read",
-      args: { path: `file-${i}.ts` },
-    }));
+  it("brief transcript hides tool results but shows errors", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "tool_result", name: "Read", text: "lots of code here ...", isError: false },
+      { kind: "tool_result", name: "bash", text: "Command not found", isError: true },
+    ];
     const r = buildSections({ blocks });
-    expect(r.actionsTaken).toEqual([
-      '* Read "file-0.ts"',
-      '* Read "file-1.ts"',
-      '* Read "file-2.ts"',
-      '- +5 actions omitted',
-      '* Read "file-8.ts"',
-      '* Read "file-9.ts"',
-    ]);
+    expect(r.briefTranscript).not.toContain("lots of code");
+    expect(r.briefTranscript).toContain("[tool_error] bash");
+    expect(r.briefTranscript).toContain("Command not found");
+  });
+
+  it("brief transcript merges adjacent assistant sections", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "assistant", text: "Part one." },
+      { kind: "tool_call", name: "Read", args: { file_path: "a.ts" } },
+      { kind: "assistant", text: "Part two." },
+    ];
+    const r = buildSections({ blocks });
+    const matches = r.briefTranscript.match(/\[assistant\]/g);
+    expect(matches?.length).toBe(1);
   });
 });
-
