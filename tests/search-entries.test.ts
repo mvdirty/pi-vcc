@@ -101,19 +101,18 @@ describe("searchEntries", () => {
     expect(r[0].matchCount!).toBeGreaterThan(r[r.length - 1].matchCount!);
   });
 
-  it("filters stopwords from natural language queries", () => {
-    // "tại sao có root cause" → stopwords: tại, sao, có → meaningful: root, cause
-    const r = searchEntries(entries, messages, "tại sao có root cause");
+  it("filters stopwords from queries", () => {
+    // "the root cause of it" → stopwords: the, of, it → meaningful: root, cause
+    const r = searchEntries(entries, messages, "the root cause of it");
     expect(r).toHaveLength(1);
     expect(r[0].index).toBe(3);
   });
 
   it("keeps all terms if all are stopwords", () => {
-    // Edge case: query of only stopwords should not return empty
+    // When all terms are stopwords, keep them (don't drop everything)
+    // "the" appears in "Found the root cause" so it matches
     const r = searchEntries(entries, messages, "the");
-    // "the" doesn't appear in our test data, so 0 results is fine
-    // The point is it doesn't crash
-    expect(r).toEqual([]);
+    expect(r.length).toBeGreaterThan(0);
   });
 
   // ── line-based snippet ──

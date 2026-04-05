@@ -41,11 +41,6 @@ const snippetRegex = (terms: string[]): RegExp => {
 
 // ── Stopwords for natural language queries ──
 const STOPWORDS = new Set([
-  // Vietnamese
-  "là", "của", "và", "có", "được", "cho", "từ", "với", "này", "đã",
-  "không", "một", "các", "trong", "đến", "về", "như", "nhưng", "hay",
-  "khi", "tại", "bằng", "cách", "nào", "gì", "sao", "đó", "thì",
-  "cái", "mà", "để", "nếu", "vì", "rồi", "còn",
   // English
   "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
   "have", "has", "had", "do", "does", "did", "will", "would", "could",

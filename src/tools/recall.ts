@@ -30,13 +30,16 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
     description:
       "Search full conversation history in this session, including before compaction." +
       " Use without query to see recent brief history." +
-      " Use with query to search all history." +
+      " Use with query to search all history. Query supports regex (e.g. 'hook|inject', 'fail.*build')." +
+      " Multi-word queries use OR logic ranked by relevance — use keywords, not full sentences." +
       " Use expand with entry indices to get full content (note: some tool results may already be truncated by Pi core before saving).",
     promptSnippet:
-      "vcc_recall: Search full conversation history including compacted parts. Use expand:[indices] for full content.",
+      "vcc_recall: Search full conversation history including compacted parts." +
+      " Supports regex (e.g. 'hook|inject'). Multi-word = OR + ranked." +
+      " Use expand:[indices] for full content.",
     parameters: Type.Object({
       query: Type.Optional(
-        Type.String({ description: "Search terms to filter history" }),
+        Type.String({ description: "Search terms or regex pattern (e.g. 'hook|inject', 'fail.*build'). Multi-word = OR ranked by relevance." }),
       ),
       expand: Type.Optional(
         Type.Array(Type.Number(), { description: "Entry indices to return full untruncated content for" }),
