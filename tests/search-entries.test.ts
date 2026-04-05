@@ -59,4 +59,65 @@ describe("searchEntries", () => {
     expect(r[0].snippet).toBeDefined();
     expect(r[0].snippet).toContain("root");
   });
+
+  // ── regex support ──
+
+  it("supports regex pattern: alternation", () => {
+    const r = searchEntries(entries, messages, "login|auth");
+    expect(r).toHaveLength(2);
+    expect(r.map((h) => h.index)).toEqual([0, 1]);
+  });
+
+  it("supports regex pattern: wildcard", () => {
+    const r = searchEntries(entries, messages, "Read.*auth");
+    expect(r).toHaveLength(1);
+    expect(r[0].index).toBe(1);
+  });
+
+  it("falls back to escaped literal for invalid regex", () => {
+    // Unbalanced parenthesis — invalid regex, should fall back to literal match
+    const extraEntries: RenderedEntry[] = [
+      { index: 0, role: "user", summary: "test (foo" },
+      { index: 1, role: "assistant", summary: "no match here" },
+    ];
+    const extraMsgs: Message[] = [
+      { role: "user", content: "error with (foo pattern" } as any,
+      { role: "assistant", content: [{ type: "text", text: "no match here" }] } as any,
+    ];
+    const r = searchEntries(extraEntries, extraMsgs, "(foo");
+    expect(r).toHaveLength(1);
+    expect(r[0].index).toBe(0);
+  });
+
+  it("regex is case-insensitive", () => {
+    const r = searchEntries(entries, messages, "FIX|ROOT");
+    expect(r).toHaveLength(2);
+  });
+
+  // ── line-based snippet ──
+
+  it("snippet shows context lines around match", () => {
+    const multiline = "line 0\nline 1\nline 2 TARGET\nline 3\nline 4\nline 5";
+    const e: RenderedEntry[] = [{ index: 0, role: "user", summary: "test" }];
+    const m: Message[] = [{ role: "user", content: multiline } as any];
+    const r = searchEntries(e, m, "TARGET");
+    expect(r).toHaveLength(1);
+    const snip = r[0].snippet!;
+    expect(snip).toContain("line 2 TARGET");
+    expect(snip).toContain("line 0");  // 2 lines before
+    expect(snip).toContain("line 4");  // 2 lines after
+    // Should NOT contain lines too far away
+    expect(snip).not.toContain("line 5");
+  });
+
+  it("snippet handles match at beginning", () => {
+    const multiline = "TARGET here\nline 1\nline 2\nline 3";
+    const e: RenderedEntry[] = [{ index: 0, role: "user", summary: "test" }];
+    const m: Message[] = [{ role: "user", content: multiline } as any];
+    const r = searchEntries(e, m, "TARGET");
+    const snip = r[0].snippet!;
+    expect(snip).toContain("TARGET here");
+    expect(snip).toContain("line 2");  // 2 lines after
+    expect(snip).not.toContain("line 3");  // too far
+  });
 });
