@@ -32,13 +32,16 @@ const TOOL_SUMMARY_FIELDS: Record<string, string> = {
 const toolOneLiner = (name: string, args: Record<string, unknown>): string => {
   const field = TOOL_SUMMARY_FIELDS[name];
   if (field && typeof args[field] === "string") {
-    return `* ${name} "${clip(args[field] as string, 60)}"`;
+    return `* ${name} "${args[field] as string}"`;
   }
   const path = extractPath(args);
-  if (path) return `* ${name} "${clip(path, 60)}"`;
+  if (path) return `* ${name} "${path}"`;
   if (name === "bash" || name === "Bash") {
     const cmd = (args.command ?? args.description ?? "") as string;
-    return `* ${name} "${redact(clip(cmd, 80))}"`;
+    if (cmd.length > 60) {
+      return `* ${name} "${redact(cmd.slice(0, 57))}..."`;
+    }
+    return `* ${name} "${redact(cmd)}"`;
   }
   if (typeof args.query === "string") {
     return `* ${name} "${clip(args.query as string, 60)}"`;
