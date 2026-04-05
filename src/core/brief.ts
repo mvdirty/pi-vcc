@@ -97,13 +97,19 @@ export const compileBrief = (blocks: NormalizedBlock[]): string => {
       case "user": {
         if (isNoiseUser(b.text)) break;
         const text = truncateTokens(b.text, TRUNCATE_USER);
-        if (text) push("[user]", text);
+        if (text) {
+          const ref = b.sourceIndex != null ? ` (#${b.sourceIndex})` : "";
+          push("[user]", text + ref);
+        }
         lastHeader = "[user]";
         break;
       }
       case "assistant": {
         const text = truncateTokens(b.text, TRUNCATE_ASSISTANT);
-        if (text) push("[assistant]", text);
+        if (text) {
+          const ref = b.sourceIndex != null ? ` (#${b.sourceIndex})` : "";
+          push("[assistant]", text + ref);
+        }
         break;
       }
       case "tool_call": {
