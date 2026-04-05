@@ -14,11 +14,22 @@ const isNoiseUser = (text: string): boolean => {
 
 // ── truncation ──
 
+const TOK_RE = /[a-zA-Z]+|[0-9]+|[^\sa-zA-Z0-9]|\s+/g;
+
 const truncateTokens = (text: string, limit: number): string => {
   const flat = text.replace(/\s+/g, " ").trim();
-  const words = flat.split(/\s+/).filter(Boolean);
-  if (words.length <= limit) return flat;
-  return words.slice(0, limit).join(" ") + "...(truncated)";
+  const matches = flat.match(TOK_RE);
+  if (!matches) return flat;
+  let count = 0;
+  let cut = matches.length;
+  for (let i = 0; i < matches.length; i++) {
+    if (matches[i].trim()) {
+      count++;
+      if (count > limit) { cut = i; break; }
+    }
+  }
+  if (cut >= matches.length) return flat;
+  return matches.slice(0, cut).join("") + "...(truncated)";
 };
 
 // ── tool summary ──
