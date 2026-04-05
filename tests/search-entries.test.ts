@@ -7,15 +7,14 @@ const entries: RenderedEntry[] = [
   { index: 0, role: "user", summary: "Fix login bug" },
   { index: 1, role: "assistant", summary: "Reading auth.ts" },
   { index: 2, role: "tool_result", summary: "[Read] code here" },
-  { index: 3, role: "assistant", summary: "Found the root cause" },
+  { index: 3, role: "assistant", summary: "Found the root cause in auth module" },
 ];
 
-// Matching raw messages for full-text search
 const messages: Message[] = [
   { role: "user", content: "Fix login bug" } as any,
   { role: "assistant", content: [{ type: "text", text: "Reading auth.ts" }] } as any,
   { role: "toolResult", content: [{ type: "text", text: "[Read] code here" }] } as any,
-  { role: "assistant", content: [{ type: "text", text: "Found the root cause" }] } as any,
+  { role: "assistant", content: [{ type: "text", text: "Found the root cause in auth module" }] } as any,
 ];
 
 describe("searchEntries", () => {
@@ -28,12 +27,6 @@ describe("searchEntries", () => {
     const r = searchEntries(entries, messages, "login");
     expect(r).toHaveLength(1);
     expect(r[0].index).toBe(0);
-  });
-
-  it("filters by multiple terms (AND)", () => {
-    const r = searchEntries(entries, messages, "root cause");
-    expect(r).toHaveLength(1);
-    expect(r[0].index).toBe(3);
   });
 
   it("returns empty for no match", () => {
@@ -64,8 +57,8 @@ describe("searchEntries", () => {
 
   it("supports regex pattern: alternation", () => {
     const r = searchEntries(entries, messages, "login|auth");
-    expect(r).toHaveLength(2);
-    expect(r.map((h) => h.index)).toEqual([0, 1]);
+    expect(r).toHaveLength(3); // "login bug", "auth.ts", "auth module"
+    expect(r.map((h) => h.index).sort()).toEqual([0, 1, 3]);
   });
 
   it("supports regex pattern: wildcard", () => {
@@ -75,7 +68,6 @@ describe("searchEntries", () => {
   });
 
   it("falls back to escaped literal for invalid regex", () => {
-    // Unbalanced parenthesis — invalid regex, should fall back to literal match
     const extraEntries: RenderedEntry[] = [
       { index: 0, role: "user", summary: "test (foo" },
       { index: 1, role: "assistant", summary: "no match here" },
@@ -94,6 +86,36 @@ describe("searchEntries", () => {
     expect(r).toHaveLength(2);
   });
 
+  // ── natural language queries (OR logic + ranking) ──
+
+  it("natural language query uses OR logic", () => {
+    // "root cause auth" — should match entries containing ANY of these terms
+    const r = searchEntries(entries, messages, "root cause auth");
+    expect(r.length).toBeGreaterThanOrEqual(2); // #3 has root+cause+auth, #1 has auth
+    // Best match (most terms) should come first
+    expect(r[0].index).toBe(3); // "Found the root cause in auth module" matches all 3
+  });
+
+  it("natural language ranks by match count", () => {
+    const r = searchEntries(entries, messages, "root cause auth");
+    expect(r[0].matchCount!).toBeGreaterThan(r[r.length - 1].matchCount!);
+  });
+
+  it("filters stopwords from natural language queries", () => {
+    // "tại sao có root cause" → stopwords: tại, sao, có → meaningful: root, cause
+    const r = searchEntries(entries, messages, "tại sao có root cause");
+    expect(r).toHaveLength(1);
+    expect(r[0].index).toBe(3);
+  });
+
+  it("keeps all terms if all are stopwords", () => {
+    // Edge case: query of only stopwords should not return empty
+    const r = searchEntries(entries, messages, "the");
+    // "the" doesn't appear in our test data, so 0 results is fine
+    // The point is it doesn't crash
+    expect(r).toEqual([]);
+  });
+
   // ── line-based snippet ──
 
   it("snippet shows context lines around match", () => {
@@ -104,9 +126,8 @@ describe("searchEntries", () => {
     expect(r).toHaveLength(1);
     const snip = r[0].snippet!;
     expect(snip).toContain("line 2 TARGET");
-    expect(snip).toContain("line 0");  // 2 lines before
-    expect(snip).toContain("line 4");  // 2 lines after
-    // Should NOT contain lines too far away
+    expect(snip).toContain("line 0");
+    expect(snip).toContain("line 4");
     expect(snip).not.toContain("line 5");
   });
 
@@ -117,7 +138,7 @@ describe("searchEntries", () => {
     const r = searchEntries(e, m, "TARGET");
     const snip = r[0].snippet!;
     expect(snip).toContain("TARGET here");
-    expect(snip).toContain("line 2");  // 2 lines after
-    expect(snip).not.toContain("line 3");  // too far
+    expect(snip).toContain("line 2");
+    expect(snip).not.toContain("line 3");
   });
 });

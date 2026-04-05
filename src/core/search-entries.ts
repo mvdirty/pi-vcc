@@ -5,41 +5,74 @@ import { textOf } from "./content";
 export interface SearchHit extends RenderedEntry {
   /** Context snippet around the first matched term (only when query provided) */
   snippet?: string;
+  /** Number of query terms matched (for ranking) */
+  matchCount?: number;
 }
-
-/** Try to compile query as regex; fall back to escaped literal. */
-const toRegex = (query: string): RegExp => {
-  const terms = query.trim().split(/\s+/);
-  // Single term: try as regex first
-  if (terms.length === 1) {
-    try {
-      return new RegExp(terms[0], "i");
-    } catch {
-      return new RegExp(escapeRegex(terms[0]), "i");
-    }
-  }
-  // Multiple terms: each must match (AND), but for snippet we use first term
-  // Build a combined pattern for the first term only (search is done per-term)
-  try {
-    return new RegExp(terms[0], "i");
-  } catch {
-    return new RegExp(escapeRegex(terms[0]), "i");
-  }
-};
 
 const escapeRegex = (s: string): string =>
   s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Check if all query terms match the haystack. Supports regex per-term. */
-const matchesAll = (hay: string, terms: string[]): boolean => {
-  for (const t of terms) {
-    try {
-      if (!new RegExp(t, "i").test(hay)) return false;
-    } catch {
-      if (!new RegExp(escapeRegex(t), "i").test(hay)) return false;
-    }
+/** Try to compile as regex; fall back to escaped literal. */
+const safeRegex = (pattern: string): RegExp => {
+  try {
+    return new RegExp(pattern, "i");
+  } catch {
+    return new RegExp(escapeRegex(pattern), "i");
   }
-  return true;
+};
+
+/** Detect if the query looks like a single regex pattern (contains regex metacharacters). */
+const looksLikeRegex = (query: string): boolean =>
+  /[|*+?{}()[\]\\^$.]/.test(query);
+
+/** Build a regex for snippet highlighting — matches first available term. */
+const snippetRegex = (terms: string[]): RegExp => {
+  const alts = terms.map((t) => {
+    try {
+      // Validate that it's a valid regex
+      new RegExp(t, "i");
+      return t;
+    } catch {
+      return escapeRegex(t);
+    }
+  });
+  return new RegExp(alts.join("|"), "i");
+};
+
+// ── Stopwords for natural language queries ──
+const STOPWORDS = new Set([
+  // Vietnamese
+  "là", "của", "và", "có", "được", "cho", "từ", "với", "này", "đã",
+  "không", "một", "các", "trong", "đến", "về", "như", "nhưng", "hay",
+  "khi", "tại", "bằng", "cách", "nào", "gì", "sao", "đó", "thì",
+  "cái", "mà", "để", "nếu", "vì", "rồi", "còn",
+  // English
+  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "do", "does", "did", "will", "would", "could",
+  "should", "may", "might", "can", "shall", "of", "in", "to", "for",
+  "with", "on", "at", "from", "by", "as", "into", "through", "during",
+  "before", "after", "above", "below", "between", "out", "off", "over",
+  "under", "again", "further", "then", "once", "here", "there", "when",
+  "where", "why", "how", "all", "both", "each", "few", "more", "most",
+  "other", "some", "such", "no", "nor", "not", "only", "own", "same",
+  "so", "than", "too", "very", "just", "about", "it", "its", "that",
+  "this", "what", "which", "who", "whom", "these", "those",
+]);
+
+/** Remove stopwords, keep meaningful terms. */
+const filterStopwords = (terms: string[]): string[] => {
+  const meaningful = terms.filter((t) => !STOPWORDS.has(t.toLowerCase()) && t.length > 1);
+  // If all terms were stopwords, return original (don't lose everything)
+  return meaningful.length > 0 ? meaningful : terms;
+};
+
+/** Count how many terms match the haystack. */
+const countMatches = (hay: string, terms: string[]): number => {
+  let count = 0;
+  for (const t of terms) {
+    if (safeRegex(t).test(hay)) count++;
+  }
+  return count;
 };
 
 /** Line-based snippet: ±contextLines around first regex match. */
@@ -79,10 +112,37 @@ export const searchEntries = (
   query?: string,
 ): SearchHit[] => {
   if (!query?.trim()) return entries;
-  const terms = query.trim().split(/\s+/);
-  const firstRegex = toRegex(query);
 
-  const hits: SearchHit[] = [];
+  const rawQuery = query.trim();
+
+  // If query looks like a single regex pattern (contains metacharacters),
+  // treat the whole thing as one pattern — don't split into terms
+  if (looksLikeRegex(rawQuery)) {
+    const regex = safeRegex(rawQuery);
+    const hits: SearchHit[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      const msg = messages[i];
+      const text = msg ? fullText(msg) : e.summary;
+      const filePart = e.files?.join(" ") ?? "";
+      const hay = `${e.role} ${text} ${filePart}`;
+      if (regex.test(hay)) {
+        const snip = lineSnippet(text, regex);
+        hits.push({ ...e, snippet: snip, matchCount: 1 });
+      }
+    }
+    return hits;
+  }
+
+  // Natural language / multi-word query: OR logic + rank by match count
+  const rawTerms = rawQuery.split(/\s+/);
+  const terms = filterStopwords(rawTerms);
+  const snipRe = snippetRegex(terms);
+
+  // Minimum terms to match: at least 1 for short queries, ~40% for longer
+  const minMatch = terms.length <= 3 ? 1 : Math.ceil(terms.length * 0.4);
+
+  const scored: Array<{ hit: SearchHit; score: number }> = [];
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     const msg = messages[i];
@@ -90,10 +150,17 @@ export const searchEntries = (
     const filePart = e.files?.join(" ") ?? "";
     const hay = `${e.role} ${text} ${filePart}`;
 
-    if (matchesAll(hay, terms)) {
-      const snip = lineSnippet(text, firstRegex);
-      hits.push({ ...e, snippet: snip });
+    const mc = countMatches(hay, terms);
+    if (mc >= minMatch) {
+      const snip = lineSnippet(text, snipRe);
+      scored.push({
+        hit: { ...e, snippet: snip, matchCount: mc },
+        score: mc,
+      });
     }
   }
-  return hits;
+
+  // Sort by match count desc (more terms matched = more relevant)
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((s) => s.hit);
 };
