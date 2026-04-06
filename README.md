@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@sting8k/pi-vcc)](https://www.npmjs.com/package/@sting8k/pi-vcc)
 
-Algorithmic conversation compactor for [Pi](https://github.com/badlogic/pi-mono). No LLM calls -- produces structured, transcript-preserving summaries using pure extraction and formatting.
+Algorithmic conversation compactor for [Pi](https://github.com/badlogic/pi-mono). No LLM calls — produces a brief transcript via extraction and formatting.
 
 Inspired by [VCC](https://github.com/lllyasviel/VCC) **(View-oriented Conversation Compiler)**.
 
@@ -14,14 +14,14 @@ Inspired by [VCC](https://github.com/lllyasviel/VCC) **(View-oriented Conversati
 | **Determinism** | Non-deterministic, can hallucinate | Same input = same output, always |
 | **Token reduction** | Varies | 79-99% on real sessions |
 | **Compaction latency** | Waits for LLM call | 10-370ms, no API calls |
-| **History after compaction** | Gone -- agent only sees summary | Fully searchable via `vcc_recall` |
+| **History after compaction** | Gone — agent only sees summary | Fully searchable via `vcc_recall` |
 | **Repeated compactions** | Each rewrite risks losing more | Sections merge and accumulate |
-| **Cost** | Burns tokens on summarization call | Zero -- no API calls |
-| **Structure** | Free-form prose | 7 typed sections (goal, turns, actions, evidence, files, context, prefs) |
+| **Cost** | Burns tokens on summarization call | Zero — no API calls |
+| **Structure** | Free-form prose | Brief transcript + 4 semantic sections |
 
 ### Real session metrics
 
-Measured with `buildCompactReport()` on the 5 largest real session JSONLs under `~/.pi/agent/sessions`, using full message content for `charsBefore`.
+Measured on the 5 largest real session JSONLs under `~/.pi/agent/sessions`.
 
 | Session | Before | After | Reduction |
 |---|---|---|---|
@@ -33,14 +33,15 @@ Measured with `buildCompactReport()` on the 5 largest real session JSONLs under 
 
 ## Features
 
-- **No LLM** -- purely algorithmic, zero extra API cost
-- **Structured summaries** -- 7 semantic sections: goals, turns, actions, evidence, files, context, preferences
-- **Bounded merge** -- rolling sections are re-capped after merge instead of growing into an archive
-- **Exact duplicate collapsing** -- repeated identical tool actions collapse into one line; long action lists show first/last with an omitted count
-- **Lossless recall** -- `vcc_recall` reads raw session JSONL, so old history stays searchable across compactions
-- **Fallback cut** -- still works when Pi core returns nothing to summarize
-- **Redaction** -- strips passwords, API keys, secrets
-- **`/pi-vcc`** -- manual compaction on demand
+- **No LLM** — purely algorithmic, zero extra API cost
+- **Brief transcript** — chronological conversation flow, each tool call collapsed to a one-liner with `(#N)` refs, text truncated to keep it compact
+- **4 semantic sections** — session goal, files & changes, outstanding context, user preferences
+- **Bounded merge** — rolling sections re-capped after merge instead of growing unbounded
+- **Lossless recall** — `vcc_recall` reads raw session JSONL, so old history stays searchable across compactions
+- **Regex search** — `vcc_recall` supports regex patterns (`hook|inject`, `fail.*build`) and OR-ranked multi-word queries
+- **Fallback cut** — still works when Pi core returns nothing to summarize
+- **Redaction** — strips passwords, API keys, secrets
+- **`/pi-vcc`** — manual compaction on demand
 
 ## Install
 
@@ -62,92 +63,112 @@ pi -e https://github.com/sting8k/pi-vcc
 
 ## Usage
 
-Once linked, pi-vcc registers a `session_before_compact` hook.
+Once installed, pi-vcc registers a `session_before_compact` hook.
 
-- When Pi triggers a compaction, pi-vcc can supply the summary.
+- When Pi triggers a compaction, pi-vcc supplies the summary.
 - To trigger compaction manually, run `/pi-vcc`.
 - To search older history after compaction, use `vcc_recall`.
 
-Output keeps the current semantic section format, with rolling sections bounded across repeated compactions:
+### Compacted message structure
 
 ```
 [Session Goal]
 - Fix the authentication bug in login flow
-
-[Key Conversation Turns]
-- [user] Fix the auth bug, users can't log in after password reset
-- [assistant] Root cause is a missing token refresh. The session cookie...(truncated)
-
-[Actions Taken]
-- * Read "src/auth/session.ts"
-- * Edit "src/auth/session.ts"
-- * bash "bun test tests/auth.test.ts"
-- +4 actions omitted
-- * bash "git diff -- src/auth/session.ts"
-- * bash "bun test tests/session.test.ts"
-
-[Important Evidence]
-- [Read] export function refreshSession(token) { if (!token) return null;...(truncated)
-- [bash] Tests: 12 passed, 0 failed
+- [Scope change]
+- Also update the session token refresh logic
 
 [Files And Changes]
-Read:
-  - src/auth/session.ts
-Modified:
-  - src/auth/session.ts
+- Modified: src/auth/session.ts
+- Created: tests/auth-refresh.test.ts
 
 [Outstanding Context]
-- [bash] ERROR: lint check failed on line 42
+- lint check still failing on line 42
 
 [User Preferences]
 - Prefer Vietnamese responses
+- Always run tests before committing
+
+[user]
+Fix the auth bug, users can't log in after password reset
+
+[assistant]
+Root cause is a missing token refresh after password reset...
+* bash "bun test tests/auth.test.ts" (#12)
+Tests: 8 passed, 4 failed — the refresh token isn't being set.
+* edit "src/auth/session.ts" (#14)
+Added token refresh call after password reset flow.
+* bash "bun test tests/auth.test.ts" (#16)
+Tests: 12 passed, 0 failed ✓
+
+[user]
+also update the session expiry logic
+
+[assistant]
+* bash "grep -n 'expiry' src/auth/session.ts" (#18)
+...(truncated)
 ```
 
-Bounded merge policy:
+**Sections:**
+
+| Section | Description |
+|---|---|
+| `[Session Goal]` | Initial goal + scope changes (regex-based extraction) |
+| `[Files And Changes]` | Modified/created files from tool calls (capped) |
+| `[Outstanding Context]` | Unresolved items — errors, pending questions |
+| `[User Preferences]` | Regex-extracted from user messages (`always`, `never`, `prefer`...) |
+| Brief transcript | Chronological conversation flow — rolling window of ~120 recent lines, tool calls collapsed to one-liners with `(#N)` refs |
+
+**Merge policy:**
 - `Session Goal`, `User Preferences`: concise sticky sections
-- `Key Conversation Turns`, `Actions Taken`, `Important Evidence`: rolling sections, re-capped after merge
-- `Outstanding Context`: fresh-only
-- `Files And Changes`: unique union
+- `Outstanding Context`: fresh-only (replaced each compaction)
+- `Files And Changes`: unique union across compactions
+- Brief transcript: rolling window, older lines drop off
 
 ## Recall (Lossless History)
 
 Pi's default compaction discards old messages permanently. After compaction, the agent only sees the summary.
 
-`vcc_recall` bypasses this by reading the raw session JSONL file directly. It parses every message entry in the file, renders each one into a searchable `RenderedEntry` with a stable index (matching the message's position in the JSONL), role, truncated summary, and associated file paths. This means entry `#41` always refers to the same message regardless of how many compactions have happened.
+`vcc_recall` bypasses this by reading the raw session JSONL file directly. It parses every message entry in the file, regardless of how many compactions have happened.
 
-**Search** matches against the full content of every entry (not just the truncated summary). The query is split into terms and all must appear. Results show a snippet around the first match with surrounding context:
+### Search
+
+Queries support **regex** and **multi-word OR logic** ranked by relevance:
 
 ```
-vcc_recall({ query: "auth token refresh" })   // all terms must match
+vcc_recall({ query: "auth token" })           // OR search, ranked
+vcc_recall({ query: "hook|inject" })           // regex pattern
+vcc_recall({ query: "fail.*build" })           // regex pattern
 ```
 
-**Browse** without a query returns the last 25 entries as brief summaries:
+### Browse
+
+Without a query, returns the last 25 entries as brief summaries:
 
 ```
 vcc_recall()
 ```
 
-**Expand** returns full untruncated content for specific indices found via search:
+### Expand
+
+Returns full untruncated content for specific indices found via search:
 
 ```
-vcc_recall({ expand: [41, 42] })               // full content, no clipping
+vcc_recall({ expand: [41, 42] })
 ```
 
-Typical workflow: search -> find relevant entry indices from snippets -> expand those indices for full content.
+Typical workflow: **search → find relevant entry indices → expand those indices for full content**.
 
 > Some tool results are truncated by Pi core at save time. `expand` returns everything in the JSONL but can't recover what Pi already cut.
 
 ## Pipeline
 
-1. **Normalize** -- raw Pi messages -> uniform blocks (user, assistant, tool_call, tool_result, thinking)
-2. **Filter noise** -- strip system messages, empty blocks
-3. **Build sections** -- extract goal, conversation turns (~128 tokens each), deduplicated tool one-liners, tool results as evidence, file paths, blockers, preferences
-4. **Format** -- render into bracketed sections
-5. **Redact** -- strip passwords, API keys, secrets
-6. **Merge** -- if previous summary exists:
-   - Appendable (turns, actions, evidence, files, prefs): deduplicate and combine
-   - Volatile (outstanding context): replace with fresh
-   - Default (session goal): fresh wins
+1. **Normalize** — raw Pi messages → uniform blocks (user, assistant, tool_call, tool_result, thinking)
+2. **Filter noise** — strip system messages, empty blocks
+3. **Build sections** — extract goal, file paths, blockers, preferences
+4. **Brief transcript** — chronological conversation flow, tool calls collapsed to one-liners, text truncated
+5. **Format** — render into bracketed sections + transcript
+6. **Redact** — strip passwords, API keys, secrets
+7. **Merge** — if previous summary exists: sticky sections merge, volatile sections replace, transcript rolls
 
 ## Debug
 
@@ -157,12 +178,12 @@ Debug logging is off by default. Enable it in `~/.pi/agent/pi-vcc-config.json`:
 { "debug": true }
 ```
 
-When enabled, each compaction writes detailed info to `/tmp/pi-vcc-debug.json` -- message counts, cut boundary, summary preview, sections.
+When enabled, each compaction writes detailed info to `/tmp/pi-vcc-debug.json` — message counts, cut boundary, summary preview, sections.
 
 ## Related Work
 
-- [VCC](https://github.com/lllyasviel/VCC) -- the original transcript-preserving conversation compiler
-- [Pi](https://github.com/badlogic/pi-mono) -- the AI coding agent this extension is built for
+- [VCC](https://github.com/lllyasviel/VCC) — the original transcript-preserving conversation compiler
+- [Pi](https://github.com/badlogic/pi-mono) — the AI coding agent this extension is built for
 
 ## License
 
