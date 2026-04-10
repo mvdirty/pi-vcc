@@ -21,8 +21,7 @@ const loadAllMessages = (sessionFile: string, full: boolean) => {
 };
 
 export const registerVccRecallCommand = (pi: ExtensionAPI) => {
-  pi.registerCommand({
-    name: "vcc-recall",
+  pi.registerCommand("vcc-recall", {
     description: "Search conversation history (same as vcc_recall tool). Usage: /vcc-recall <query> [page:N]",
     handler: async (args: string, ctx) => {
       const sessionFile = ctx.sessionManager.getSessionFile();
