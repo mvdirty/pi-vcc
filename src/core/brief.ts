@@ -180,6 +180,29 @@ export const compileBrief = (blocks: NormalizedBlock[]): string => {
     }
   }
 
+  // Collapse consecutive identical tool lines (same text, different #ref)
+  for (const sec of sections) {
+    if (sec.header !== "[assistant]") continue;
+    const out: string[] = [];
+    for (const line of sec.lines) {
+      if (!line.startsWith("* ")) { out.push(line); continue; }
+      const ref = line.match(/\(#(\d+)\)$/)?.[1] ?? "";
+      const base = ref ? line.slice(0, -(ref.length + 3)).trimEnd() : line;
+      const last = out.length > 0 ? out[out.length - 1] : "";
+      // Already collapsed? e.g. `* bash "x" (#1, #2) x2`
+      const m = last.match(/^(.*) \((#[\d, #]+)\) x(\d+)$/);
+      if (m && m[1] === base) {
+        out[out.length - 1] = `${base} (${m[2]}, #${ref}) x${parseInt(m[3]) + 1}`;
+      } else if (last.match(/\(#\d+\)$/) && last.replace(/\s*\(#\d+\)$/, "") === base) {
+        const prevRef = last.match(/\(#(\d+)\)$/)?.[1];
+        out[out.length - 1] = `${base} (#${prevRef}, #${ref}) x2`;
+      } else {
+        out.push(line);
+      }
+    }
+    sec.lines = out;
+  }
+
   // Emit sections — suppress blank lines between consecutive tool summaries
   const out: string[] = [];
   for (let i = 0; i < sections.length; i++) {

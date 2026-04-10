@@ -39,6 +39,8 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
 
 const formatFileActivity = (blocks: NormalizedBlock[]): string[] => {
   const act = extractFiles(blocks);
+  // Dedup: if already Modified, drop from Created (file existed before)
+  for (const p of act.modified) act.created.delete(p);
   const lines: string[] = [];
   const cap = (set: Set<string>, limit: number) => {
     const arr = [...set];

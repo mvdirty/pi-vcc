@@ -42,19 +42,65 @@ const briefOf = (text: string): string => {
 
 /** Merge a header section */
 const mergeHeaderSection = (header: string, prev: string, fresh: string): string => {
-  // Outstanding Context is volatile — always use fresh only
+  // Outstanding Context is volatile -- always use fresh only
   if (header === "Outstanding Context") return fresh;
-  // Session Goal & Files And Changes: append new items, dedupe
-  // TODO: cap at ~10 most recent entries to prevent unbounded growth
-  //   Evidence: real sessions show 4→31 goal lines, 3→29 files lines over 14 compactions
-  //   Also filter <skill> tags and casual remarks from Session Goal
   if (!prev) return fresh;
   if (!fresh) return prev;
-  const prevLines = prev.split("\n").filter((l) => l.startsWith("- "));
-  const freshLines = fresh.split("\n").filter((l) => l.startsWith("- "));
+
+  // Files And Changes: merge by category (Modified/Created/Read), dedup paths
+  if (header === "Files And Changes") {
+    return mergeFileLines(prev, fresh);
+  }
+
+  // Session Goal, User Preferences: line-level dedup, cap
+  const isClean = (l: string) => l.startsWith("- ") && !l.includes("<skill") && !l.includes("</skill");
+  const prevLines = prev.split("\n").filter(isClean);
+  const freshLines = fresh.split("\n").filter(isClean);
   const combined = [...new Set([...prevLines, ...freshLines])];
-  if (combined.length === 0) return "";
-  return `[${header}]\n${combined.join("\n")}`;
+  const CAP = header === "Session Goal" ? 8 : 15;
+  const capped = combined.length > CAP ? combined.slice(-CAP) : combined;
+  if (capped.length === 0) return "";
+  return `[${header}]\n${capped.join("\n")}`;
+};
+
+/** Merge Files And Changes by category, dedup paths across compactions */
+const mergeFileLines = (prev: string, fresh: string): string => {
+  const categories = ["Modified", "Created", "Read"] as const;
+  const merged: Record<string, Set<string>> = {};
+  for (const cat of categories) merged[cat] = new Set();
+
+  // Parse "- Modified: a, b, c (+N more)" lines from both prev and fresh
+  for (const text of [prev, fresh]) {
+    for (const line of text.split("\n")) {
+      for (const cat of categories) {
+        const prefix = `- ${cat}: `;
+        if (!line.startsWith(prefix)) continue;
+        let rest = line.slice(prefix.length);
+        // Strip "(+N more)" suffix
+        rest = rest.replace(/\s*\(\+\d+ more\)\s*$/, "");
+        for (const p of rest.split(",")) {
+          const trimmed = p.trim();
+          if (trimmed) merged[cat].add(trimmed);
+        }
+      }
+    }
+  }
+
+  // Dedup: if already in Modified, drop from Created (file existed before)
+  for (const p of merged.Modified) merged.Created.delete(p);
+
+  const cap = (set: Set<string>, limit: number) => {
+    const arr = [...set];
+    if (arr.length <= limit) return arr.join(", ");
+    return arr.slice(0, limit).join(", ") + ` (+${arr.length - limit} more)`;
+  };
+
+  const lines: string[] = [];
+  if (merged.Modified.size > 0) lines.push(`- Modified: ${cap(merged.Modified, 10)}`);
+  if (merged.Created.size > 0) lines.push(`- Created: ${cap(merged.Created, 10)}`);
+  if (merged.Read.size > 0) lines.push(`- Read: ${cap(merged.Read, 10)}`);
+  if (lines.length === 0) return "";
+  return `[Files And Changes]\n${lines.join("\n")}`;
 };
 
 const mergeBriefTranscript = (prev: string, fresh: string): string => {

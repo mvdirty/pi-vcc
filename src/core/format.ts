@@ -35,6 +35,8 @@ export const formatSummary = (data: SectionData): string => {
     parts.push(capBrief(data.briefTranscript));
   }
 
+  if (parts.length === 0) return "";
+
   // Hint: remind AI that older conversation is searchable via vcc_recall
   parts.push(
     "Note: conversation history before this summary is searchable via `vcc_recall`. " +

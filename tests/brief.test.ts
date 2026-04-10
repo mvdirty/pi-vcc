@@ -95,13 +95,13 @@ describe("compileBrief", () => {
   });
 
   it("truncates long assistant text", () => {
-    const longText = Array.from({ length: 200 }, (_, i) => `word${i}`).join(" ");
+    const longText = Array.from({ length: 300 }, (_, i) => `word${i}`).join(" ");
     const blocks: NormalizedBlock[] = [
       { kind: "assistant", text: longText },
     ];
     const r = compileBrief(blocks);
     expect(r).toContain("(truncated)");
-    expect(r).not.toContain("word199");
+    expect(r).not.toContain("word299");
   });
 
   it("renders a realistic conversation flow", () => {
