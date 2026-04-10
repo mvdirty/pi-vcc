@@ -3,7 +3,7 @@ import type { FileOps } from "../types";
 import { normalize } from "./normalize";
 import { filterNoise } from "./filter-noise";
 import { buildSections } from "./build-sections";
-import { formatSummary, formatJsonSummary, capBrief } from "./format";
+import { formatSummary, formatJsonSummary, capBrief, RECALL_NOTE } from "./format";
 import type { JsonSummary } from "./format";
 import type { CompactEntry } from "./brief";
 import { redact } from "./redact";
@@ -167,7 +167,7 @@ const mergeJsonPrevious = (prevJson: JsonSummary, data: SectionData): string => 
     outstandingContext: data.outstandingContext, // volatile, always fresh
     userPreferences: mergeLines(prevJson.userPreferences, data.userPreferences, 15),
     transcript: cappedTranscript,
-    note: "Conversation history before this summary is searchable via `vcc_recall`.",
+    note: RECALL_NOTE,
   };
   return JSON.stringify(obj);
 };

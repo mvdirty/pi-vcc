@@ -20,7 +20,12 @@ export const capBrief = (text: string): string => {
   return `...(${omitted} earlier lines omitted)\n\n${clean.join("\n")}`;
 };
 
-export const formatSummary = (data: SectionData): string => {
+export const RECALL_NOTE =
+  "Use `vcc_recall` to search for prior work, decisions, and context from before this summary. " +
+  "Do not redo work already completed.";
+
+export const formatSummary = (
+data: SectionData): string => {
   const headerParts = [
     section("Session Goal", data.sessionGoal),
     section("Files And Changes", data.filesAndChanges),
@@ -39,10 +44,7 @@ export const formatSummary = (data: SectionData): string => {
   if (parts.length === 0) return "";
 
   // Hint: remind AI that older conversation is searchable via vcc_recall
-  parts.push(
-    "Note: conversation history before this summary is searchable via `vcc_recall`. " +
-    "Use it to find details, results, or context that may have been truncated above."
-  );
+  parts.push(RECALL_NOTE);
 
   return parts.join("\n\n---\n\n");
 };
@@ -72,7 +74,7 @@ export const formatJsonSummary = (data: SectionData): string => {
     outstandingContext: data.outstandingContext,
     userPreferences: data.userPreferences,
     transcript: capTranscript(data.compactEntries),
-    note: "Conversation history before this summary is searchable via `vcc_recall`.",
+    note: RECALL_NOTE,
   };
   return JSON.stringify(obj);
 };

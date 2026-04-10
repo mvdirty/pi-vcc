@@ -89,16 +89,17 @@ describe("searchEntries", () => {
   // ── natural language queries (OR logic + ranking) ──
 
   it("natural language query uses OR logic", () => {
-    // "root cause auth" — should match entries containing ANY of these terms
+    // "root cause auth" -- matches entries containing ANY of these terms
     const r = searchEntries(entries, messages, "root cause auth");
-    expect(r.length).toBeGreaterThanOrEqual(2); // #3 has root+cause+auth, #1 has auth
-    // Best match (most terms) should come first
+    expect(r.length).toBeGreaterThanOrEqual(2); // #3 has all 3, #1 has auth
+    // Best match (highest BM25) should come first
     expect(r[0].index).toBe(3); // "Found the root cause in auth module" matches all 3
   });
 
-  it("natural language ranks by match count", () => {
+  it("natural language ranks by BM25 score", () => {
     const r = searchEntries(entries, messages, "root cause auth");
-    expect(r[0].matchCount!).toBeGreaterThan(r[r.length - 1].matchCount!);
+    // Top result has more terms matched = higher BM25 score
+    expect(r[0].matchCount!).toBeGreaterThanOrEqual(r[r.length - 1].matchCount!);
   });
 
   it("filters stopwords from queries", () => {

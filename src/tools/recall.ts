@@ -6,7 +6,7 @@ import { searchEntries } from "../core/search-entries";
 import { formatRecallOutput } from "../core/format-recall";
 
 const DEFAULT_RECENT = 25;
-const MAX_RESULTS = 50;
+const PAGE_SIZE = 5;
 
 const loadAllMessages = (sessionFile: string, full: boolean) => {
   const content = readFileSync(sessionFile, "utf-8");
@@ -32,7 +32,8 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
       " Use without query to see recent brief history." +
       " Use with query to search all history. Query supports regex (e.g. 'hook|inject', 'fail.*build')." +
       " Multi-word queries use OR logic ranked by relevance — use keywords, not full sentences." +
-      " Use expand with entry indices to get full content (note: some tool results may already be truncated by Pi core before saving).",
+      " Use expand with entry indices to get full content (note: some tool results may already be truncated by Pi core before saving)." +
+      " Search returns 5 results per page — use page:N for more.",
     promptSnippet:
       "vcc_recall: Search full conversation history including compacted parts." +
       " Supports regex (e.g. 'hook|inject'). Multi-word = OR + ranked." +
@@ -43,6 +44,9 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
       ),
       expand: Type.Optional(
         Type.Array(Type.Number(), { description: "Entry indices to return full untruncated content for" }),
+      ),
+      page: Type.Optional(
+        Type.Number({ description: "Page number (1-based) for paginated search results. Default: 1." }),
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -74,11 +78,29 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
       }
 
       const { rendered: msgs, rawMessages } = loadAllMessages(sessionFile, false);
-      const results = params.query?.trim()
-        ? searchEntries(msgs, rawMessages, params.query).slice(0, MAX_RESULTS)
+      const allResults = params.query?.trim()
+        ? searchEntries(msgs, rawMessages, params.query)
         : msgs.slice(-DEFAULT_RECENT);
-      const output = formatRecallOutput(results, params.query);
 
+      if (params.query?.trim()) {
+        const page = Math.max(1, params.page ?? 1);
+        const start = (page - 1) * PAGE_SIZE;
+        const pageResults = allResults.slice(start, start + PAGE_SIZE);
+        const totalPages = Math.ceil(allResults.length / PAGE_SIZE);
+        const header = totalPages > 1
+          ? `Page ${page}/${totalPages} (${allResults.length} total matches)`
+          : `${allResults.length} matches`;
+        const footer = page < totalPages
+          ? `\n--- Use page:${page + 1} for more results ---`
+          : "";
+        const output = formatRecallOutput(pageResults, params.query, header) + footer;
+        return {
+          content: [{ type: "text", text: output }],
+          details: undefined,
+        };
+      }
+
+      const output = formatRecallOutput(allResults, params.query);
       return {
         content: [{ type: "text", text: output }],
         details: undefined,

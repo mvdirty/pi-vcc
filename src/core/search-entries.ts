@@ -61,13 +61,67 @@ const filterStopwords = (terms: string[]): string[] => {
   return meaningful.length > 0 ? meaningful : terms;
 };
 
-/** Count how many terms match the haystack. */
+/** Count how many distinct terms match the haystack. */
 const countMatches = (hay: string, terms: string[]): number => {
   let count = 0;
   for (const t of terms) {
     if (safeRegex(t).test(hay)) count++;
   }
   return count;
+};
+
+// ── BM25-lite scoring ──
+const BM25_K = 1.2;
+const BM25_B = 0.75;
+
+/** Count occurrences of a regex pattern in text. */
+const termFreq = (text: string, pattern: RegExp): number => {
+  const matches = text.match(new RegExp(pattern.source, "gi"));
+  return matches ? matches.length : 0;
+};
+
+interface BM25Context {
+  n: number;         // total docs
+  avgDl: number;     // average doc length (words)
+  df: Map<string, number>; // term -> number of docs containing it
+}
+
+/** Precompute IDF and avgDl across all docs. */
+const buildBM25Context = (docs: string[], terms: string[]): BM25Context => {
+  const n = docs.length;
+  const df = new Map<string, number>();
+  let totalLen = 0;
+
+  for (const doc of docs) {
+    totalLen += doc.split(/\s+/).length;
+    for (const t of terms) {
+      if (safeRegex(t).test(doc)) {
+        df.set(t, (df.get(t) ?? 0) + 1);
+      }
+    }
+  }
+
+  return { n, avgDl: totalLen / Math.max(n, 1), df };
+};
+
+/** BM25 score for a single doc against query terms. */
+const bm25Score = (doc: string, terms: string[], ctx: BM25Context): number => {
+  const dl = doc.split(/\s+/).length;
+  let score = 0;
+
+  for (const t of terms) {
+    const tf = termFreq(doc, safeRegex(t));
+    if (tf === 0) continue;
+
+    const docFreq = ctx.df.get(t) ?? 0;
+    // IDF: log((N - df + 0.5) / (df + 0.5) + 1)
+    const idf = Math.log((ctx.n - docFreq + 0.5) / (docFreq + 0.5) + 1);
+    // TF saturation with length normalization
+    const tfNorm = (tf * (BM25_K + 1)) / (tf + BM25_K * (1 - BM25_B + BM25_B * dl / ctx.avgDl));
+    score += idf * tfNorm;
+  }
+
+  return score;
 };
 
 /** Line-based snippet: ±contextLines around first regex match. */
@@ -129,33 +183,45 @@ export const searchEntries = (
     return hits;
   }
 
-  // Natural language / multi-word query: OR logic + rank by match count
+  // Natural language / multi-word query: BM25 scoring
   const rawTerms = rawQuery.split(/\s+/);
   const terms = filterStopwords(rawTerms);
   const snipRe = snippetRegex(terms);
 
-  // Minimum terms to match: at least 1 for short queries, ~40% for longer
-  const minMatch = terms.length <= 3 ? 1 : Math.ceil(terms.length * 0.4);
-
-  const scored: Array<{ hit: SearchHit; score: number }> = [];
+  // Build all docs for BM25 context
+  const docs: string[] = [];
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     const msg = messages[i];
     const text = msg ? fullText(msg) : e.summary;
     const filePart = e.files?.join(" ") ?? "";
-    const hay = `${e.role} ${text} ${filePart}`;
-
-    const mc = countMatches(hay, terms);
-    if (mc >= minMatch) {
-      const snip = lineSnippet(text, snipRe);
-      scored.push({
-        hit: { ...e, snippet: snip, matchCount: mc },
-        score: mc,
-      });
-    }
+    docs.push(`${e.role} ${text} ${filePart}`);
   }
 
-  // Sort by match count desc (more terms matched = more relevant)
+  const ctx = buildBM25Context(docs, terms);
+
+  const scored: Array<{ hit: SearchHit; score: number }> = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const hay = docs[i];
+    const mc = countMatches(hay, terms);
+    if (mc === 0) continue;
+    const score = bm25Score(hay, terms, ctx);
+    const text = messages[i] ? fullText(messages[i]) : e.summary;
+    const snip = lineSnippet(text, snipRe);
+    scored.push({
+      hit: { ...e, snippet: snip, matchCount: mc },
+      score,
+    });
+  }
+
+  // Sort by BM25 score desc, drop low-relevance tail
   scored.sort((a, b) => b.score - a.score);
+  if (scored.length > 0) {
+    const topScore = scored[0].score;
+    const threshold = topScore * 0.3;
+    const cutoff = scored.findIndex((s) => s.score < threshold);
+    if (cutoff > 0) scored.length = cutoff;
+  }
   return scored.map((s) => s.hit);
 };
