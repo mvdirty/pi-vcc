@@ -3,13 +3,16 @@ import type { FileOps } from "../types";
 import { normalize } from "./normalize";
 import { filterNoise } from "./filter-noise";
 import { buildSections } from "./build-sections";
-import { formatSummary, capBrief } from "./format";
+import { formatSummary, formatJsonSummary, capBrief } from "./format";
+import type { JsonSummary } from "./format";
+import type { CompactEntry } from "./brief";
 import { redact } from "./redact";
 
 export interface CompileInput {
   messages: Message[];
   previousSummary?: string;
   fileOps?: FileOps;
+  format?: "text" | "json";
 }
 
 const HEADER_NAMES = ["Session Goal", "Files And Changes", "Outstanding Context", "User Preferences"];
@@ -135,9 +138,108 @@ const mergePrevious = (prev: string, fresh: string): string => {
   return parts.join(SEPARATOR);
 };
 
+const BRIEF_MAX_ENTRIES = 120;
+
+/** Merge JSON previous summary with fresh SectionData */
+const mergeJsonPrevious = (prevJson: JsonSummary, data: SectionData): string => {
+  // Files And Changes: merge by category, dedup
+  const mergedFiles = mergeFileLinesFromArrays(prevJson.filesAndChanges, data.filesAndChanges);
+
+  // Session Goal, User Preferences: dedup, cap
+  const mergeLines = (prev: string[], fresh: string[], cap: number): string[] => {
+    const isClean = (l: string) => !l.includes("<skill") && !l.includes("</skill");
+    const combined = [...new Set([...prev.filter(isClean), ...fresh.filter(isClean)])];
+    return combined.length > cap ? combined.slice(-cap) : combined;
+  };
+
+  // Transcript: append fresh compact entries, cap
+  const mergedTranscript: CompactEntry[] = [...prevJson.transcript, ...data.compactEntries];
+  const cappedTranscript = mergedTranscript.length > BRIEF_MAX_ENTRIES
+    ? [
+        ["a", `...(${mergedTranscript.length - BRIEF_MAX_ENTRIES} earlier entries omitted)`] as CompactEntry,
+        ...mergedTranscript.slice(-BRIEF_MAX_ENTRIES),
+      ]
+    : mergedTranscript;
+
+  const obj: JsonSummary = {
+    sessionGoal: mergeLines(prevJson.sessionGoal, data.sessionGoal, 8),
+    filesAndChanges: mergedFiles,
+    outstandingContext: data.outstandingContext, // volatile, always fresh
+    userPreferences: mergeLines(prevJson.userPreferences, data.userPreferences, 15),
+    transcript: cappedTranscript,
+    note: "Conversation history before this summary is searchable via `vcc_recall`.",
+  };
+  return JSON.stringify(obj);
+};
+
+/** Merge file lines from two string arrays (JSON mode) */
+const mergeFileLinesFromArrays = (prev: string[], fresh: string[]): string[] => {
+  const categories = ["Modified", "Created", "Read"] as const;
+  const merged: Record<string, Set<string>> = {};
+  for (const cat of categories) merged[cat] = new Set();
+
+  for (const arr of [prev, fresh]) {
+    for (const line of arr) {
+      for (const cat of categories) {
+        if (!line.startsWith(`${cat}: `)) continue;
+        let rest = line.slice(cat.length + 2);
+        rest = rest.replace(/\s*\(\+\d+ more\)\s*$/, "");
+        for (const p of rest.split(",")) {
+          const trimmed = p.trim();
+          if (trimmed) merged[cat].add(trimmed);
+        }
+      }
+    }
+  }
+
+  for (const p of merged.Modified) merged.Created.delete(p);
+
+  const cap = (set: Set<string>, limit: number) => {
+    const arr = [...set];
+    if (arr.length <= limit) return arr.join(", ");
+    return arr.slice(0, limit).join(", ") + ` (+${arr.length - limit} more)`;
+  };
+
+  const lines: string[] = [];
+  if (merged.Modified.size > 0) lines.push(`Modified: ${cap(merged.Modified, 10)}`);
+  if (merged.Created.size > 0) lines.push(`Created: ${cap(merged.Created, 10)}`);
+  if (merged.Read.size > 0) lines.push(`Read: ${cap(merged.Read, 10)}`);
+  return lines;
+};
+
+/** Try parsing previous summary as JSON */
+const tryParseJsonSummary = (text: string): JsonSummary | null => {
+  try {
+    const obj = JSON.parse(text);
+    if (obj && Array.isArray(obj.transcript)) return obj as JsonSummary;
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 export const compile = (input: CompileInput): string => {
+  const fmt = input.format ?? "text";
   const blocks = filterNoise(normalize(input.messages));
   const data = buildSections({ blocks });
+
+  if (fmt === "json") {
+    if (input.previousSummary) {
+      const prevJson = tryParseJsonSummary(input.previousSummary);
+      if (prevJson) {
+        return redact(mergeJsonPrevious(prevJson, data));
+      }
+      // Previous was text format -- merge as text, then convert fresh to JSON
+      // (transition from text to json mode mid-session)
+      const textMerged = input.previousSummary ? mergePrevious(input.previousSummary, formatSummary(data)) : formatSummary(data);
+      // Can't cleanly convert merged text to JSON, so just output fresh JSON
+      // with a note about previous context
+      return redact(formatJsonSummary(data));
+    }
+    return redact(formatJsonSummary(data));
+  }
+
+  // Text mode (default)
   const fresh = formatSummary(data);
   const merged = input.previousSummary ? mergePrevious(input.previousSummary, fresh) : fresh;
   return redact(merged);

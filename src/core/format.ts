@@ -1,4 +1,5 @@
 import type { SectionData } from "../sections";
+import type { CompactEntry } from "./brief";
 
 const section = (title: string, items: string[]): string => {
   if (items.length === 0) return "";
@@ -44,4 +45,34 @@ export const formatSummary = (data: SectionData): string => {
   );
 
   return parts.join("\n\n---\n\n");
+};
+
+export interface JsonSummary {
+  sessionGoal: string[];
+  filesAndChanges: string[];
+  outstandingContext: string[];
+  userPreferences: string[];
+  transcript: CompactEntry[];
+  note: string;
+}
+
+const BRIEF_MAX_ENTRIES = 120;
+
+const capTranscript = (entries: CompactEntry[]): CompactEntry[] => {
+  if (entries.length <= BRIEF_MAX_ENTRIES) return entries;
+  const omitted = entries.length - BRIEF_MAX_ENTRIES;
+  const kept = entries.slice(-BRIEF_MAX_ENTRIES);
+  return [["a", `...(${omitted} earlier entries omitted)`], ...kept];
+};
+
+export const formatJsonSummary = (data: SectionData): string => {
+  const obj: JsonSummary = {
+    sessionGoal: data.sessionGoal,
+    filesAndChanges: data.filesAndChanges,
+    outstandingContext: data.outstandingContext,
+    userPreferences: data.userPreferences,
+    transcript: capTranscript(data.compactEntries),
+    note: "Conversation history before this summary is searchable via `vcc_recall`.",
+  };
+  return JSON.stringify(obj);
 };

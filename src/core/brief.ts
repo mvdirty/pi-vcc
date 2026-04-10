@@ -113,23 +113,38 @@ export interface BriefLine {
   lines: string[];
 }
 
+/** Structured transcript entry for JSON output */
+export interface TranscriptEntry {
+  role: "user" | "assistant" | "tool_error";
+  text?: string;
+  tool?: string;
+  cmd?: string;
+  ref?: string;
+  /** Collapse count when identical tool calls are grouped */
+  count?: number;
+}
+
 /**
- * Compile NormalizedBlocks into a chronological brief transcript.
- *
- * Rules (adapted from VCC lower_brief):
- * 1. User text — truncate to TRUNCATE_USER tokens
- * 2. Assistant text — truncate to TRUNCATE_ASSISTANT tokens
- * 3. Tool calls — collapse to one-liner summary
- * 4. Tool results — hide, except errors (show first line)
- * 5. Thinking — hide entirely
- * 6. Adjacent assistant sections — merge
+ * Compact tuple transcript entry for JSON output.
+ * Format: [role, text/cmd, tool?, ref?, count?]
+ * Role codes: "u" = user, "a" = assistant, "e" = tool_error
+ * Trailing undefined fields are omitted.
  */
-export const compileBrief = (blocks: NormalizedBlock[]): string => {
+export type CompactEntry =
+  | [role: string, text: string]
+  | [role: string, text: string, tool: string]
+  | [role: string, text: string, tool: string, ref: string]
+  | [role: string, text: string, tool: string, ref: string, count: number];
+
+/**
+ * Build BriefLine sections from NormalizedBlocks (shared core logic).
+ * Used by both text and JSON formatters.
+ */
+export const buildBriefSections = (blocks: NormalizedBlock[]): BriefLine[] => {
   const sections: BriefLine[] = [];
   let lastHeader = "";
 
   const push = (header: string, line: string) => {
-    // Merge adjacent assistant sections
     if (header === lastHeader && sections.length > 0) {
       sections[sections.length - 1].lines.push(line);
       return;
@@ -171,11 +186,9 @@ export const compileBrief = (blocks: NormalizedBlock[]): string => {
           push(header, firstLine(b.text, 150));
           lastHeader = header;
         }
-        // Non-error tool results are hidden (too verbose)
         break;
       }
       case "thinking":
-        // Hidden entirely
         break;
     }
   }
@@ -189,7 +202,6 @@ export const compileBrief = (blocks: NormalizedBlock[]): string => {
       const ref = line.match(/\(#(\d+)\)$/)?.[1] ?? "";
       const base = ref ? line.slice(0, -(ref.length + 3)).trimEnd() : line;
       const last = out.length > 0 ? out[out.length - 1] : "";
-      // Already collapsed? e.g. `* bash "x" (#1, #2) x2`
       const m = last.match(/^(.*) \((#[\d, #]+)\) x(\d+)$/);
       if (m && m[1] === base) {
         out[out.length - 1] = `${base} (${m[2]}, #${ref}) x${parseInt(m[3]) + 1}`;
@@ -203,7 +215,15 @@ export const compileBrief = (blocks: NormalizedBlock[]): string => {
     sec.lines = out;
   }
 
-  // Emit sections — suppress blank lines between consecutive tool summaries
+  return sections;
+};
+
+/**
+ * Stringify BriefLine sections into text format.
+ */
+export const stringifyBrief = (sections: BriefLine[]): string => {
+
+  // Emit sections -- suppress blank lines between consecutive tool summaries
   const out: string[] = [];
   for (let i = 0; i < sections.length; i++) {
     const sec = sections[i];
@@ -213,7 +233,6 @@ export const compileBrief = (blocks: NormalizedBlock[]): string => {
         prev.lines.every((l) => l.startsWith("* "));
       const curIsTools = sec.header === "[assistant]" &&
         sec.lines.every((l) => l.startsWith("* "));
-      // Suppress blank line between consecutive tool-only assistant sections
       if (!(prevIsTools && curIsTools)) {
         out.push("");
       }
@@ -226,3 +245,132 @@ export const compileBrief = (blocks: NormalizedBlock[]): string => {
 
   return out.join("\n");
 };
+
+/** Parse a text line into a structured TranscriptEntry */
+const parseToolLine = (line: string): { tool: string; cmd?: string; ref?: string; count?: number } | null => {
+  // * bash "cmd" (#5)
+  // * bash "cmd" (#1, #3) x2
+  // * tilth "query" (#7)
+  const m = line.match(/^\* (\S+)\s*(?:"([^"]*)")?\s*(?:\((#[\d, #]+)\))?\s*(?:x(\d+))?$/);
+  if (!m) return null;
+  return {
+    tool: m[1],
+    cmd: m[2] || undefined,
+    ref: m[3] || undefined,
+    count: m[4] ? parseInt(m[4]) : undefined,
+  };
+};
+
+const extractRef = (text: string): { clean: string; ref?: string } => {
+  const m = text.match(/\s*\(#(\d+)\)$/);
+  if (!m) return { clean: text };
+  return { clean: text.slice(0, m.index).trimEnd(), ref: `#${m[1]}` };
+};
+
+/**
+ * Convert BriefLine sections to structured TranscriptEntry array for JSON output.
+ */
+export const sectionsToTranscript = (sections: BriefLine[]): TranscriptEntry[] => {
+  const entries: TranscriptEntry[] = [];
+
+  for (const sec of sections) {
+    if (sec.header === "[user]") {
+      for (const line of sec.lines) {
+        const { clean, ref } = extractRef(line);
+        entries.push({ role: "user", text: clean, ...(ref && { ref }) });
+      }
+    } else if (sec.header === "[assistant]") {
+      for (const line of sec.lines) {
+        if (line.startsWith("* ")) {
+          const parsed = parseToolLine(line);
+          if (parsed) {
+            entries.push({
+              role: "assistant",
+              tool: parsed.tool,
+              ...(parsed.cmd && { cmd: parsed.cmd }),
+              ...(parsed.ref && { ref: parsed.ref }),
+              ...(parsed.count && { count: parsed.count }),
+            });
+          } else {
+            // Fallback: unparseable tool line
+            const { clean, ref } = extractRef(line.slice(2));
+            entries.push({ role: "assistant", text: clean, ...(ref && { ref }) });
+          }
+        } else {
+          const { clean, ref } = extractRef(line);
+          entries.push({ role: "assistant", text: clean, ...(ref && { ref }) });
+        }
+      }
+    } else if (sec.header.startsWith("[tool_error]")) {
+      // [tool_error] bash (#5)
+      const headerMatch = sec.header.match(/^\[tool_error\]\s+(\S+)\s*(?:\(#(\d+)\))?/);
+      const tool = headerMatch?.[1] ?? "unknown";
+      const ref = headerMatch?.[2] ? `#${headerMatch[2]}` : undefined;
+      for (const line of sec.lines) {
+        entries.push({
+          role: "tool_error",
+          tool,
+          text: line,
+          ...(ref && { ref }),
+        });
+      }
+    }
+  }
+
+  return entries;
+};
+
+/**
+ * Convert BriefLine sections to compact tuple array for JSON output.
+ */
+export const sectionsToCompact = (sections: BriefLine[]): CompactEntry[] => {
+  const entries: CompactEntry[] = [];
+
+  for (const sec of sections) {
+    if (sec.header === "[user]") {
+      for (const line of sec.lines) {
+        // user text: keep ref inline -- no tool field needed
+        entries.push(["u", line]);
+      }
+    } else if (sec.header === "[assistant]") {
+      for (const line of sec.lines) {
+        if (line.startsWith("* ")) {
+          const parsed = parseToolLine(line);
+          if (parsed) {
+            // tool call: tach ref thanh element rieng
+            const text = parsed.cmd ?? "";
+            if (parsed.count && parsed.ref) {
+              entries.push(["a", text, parsed.tool, parsed.ref, parsed.count]);
+            } else if (parsed.ref) {
+              entries.push(["a", text, parsed.tool, parsed.ref]);
+            } else {
+              entries.push(["a", text, parsed.tool]);
+            }
+          } else {
+            entries.push(["a", line.slice(2)]); // strip "* "
+          }
+        } else {
+          // assistant text: keep ref inline
+          entries.push(["a", line]);
+        }
+      }
+    } else if (sec.header.startsWith("[tool_error]")) {
+      const headerMatch = sec.header.match(/^\[tool_error\]\s+(\S+)\s*(?:\(#(\d+)\))?/);
+      const tool = headerMatch?.[1] ?? "unknown";
+      const ref = headerMatch?.[2] ? `#${headerMatch[2]}` : undefined;
+      for (const line of sec.lines) {
+        if (ref) {
+          entries.push(["e", line, tool, ref]);
+        } else {
+          entries.push(["e", line, tool]);
+        }
+      }
+    }
+  }
+
+  return entries;
+};
+
+/** Convenience: build sections from blocks and stringify to text */
+export const compileBrief = (blocks: NormalizedBlock[]): string =>
+  stringifyBrief(buildBriefSections(blocks));

@@ -8,12 +8,17 @@ import type { PiVccCompactionDetails } from "../details";
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-vcc-config.json");
 
-const loadConfig = (): { debug?: boolean } => {
+export interface PiVccConfig {
+  debug?: boolean;
+  format?: "text" | "json";
+}
+
+const loadConfig = (): PiVccConfig => {
   try { return JSON.parse(readFileSync(CONFIG_PATH, "utf-8")); } catch { return {}; }
 };
 
-const dbg = (data: Record<string, unknown>) => {
-  if (!loadConfig().debug) return;
+const dbg = (config: PiVccConfig, data: Record<string, unknown>) => {
+  if (!config.debug) return;
   try { writeFileSync("/tmp/pi-vcc-debug.json", JSON.stringify(data, null, 2)); } catch {}
 };
 
@@ -93,6 +98,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     const firstKeptEntryId = ownCut.firstKeptEntryId;
     const messages = convertToLlm(agentMessages);
 
+    const config = loadConfig();
+
     const summary = compile({
       messages,
       previousSummary: preparation.previousSummary,
@@ -100,6 +107,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
         readFiles: [...preparation.fileOps.read],
         modifiedFiles: [...preparation.fileOps.written, ...preparation.fileOps.edited],
       },
+      format: config.format ?? "text",
     });
 
     const branchIds = branchEntries.map((e: any) => e.id);
@@ -113,7 +121,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
         }))
       : [];
 
-    dbg({
+    dbg(config, {
       usedOwnCut: true,
       messagesToSummarize: agentMessages.length,
       messagesPreviewHead: agentMessages.slice(0, 3).map((m: any) => ({ role: m.role, preview: previewContent(m.content) })),

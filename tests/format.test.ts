@@ -8,6 +8,8 @@ const empty: SectionData = {
   filesAndChanges: [],
   userPreferences: [],
   briefTranscript: "",
+  transcriptEntries: [],
+  compactEntries: [],
 };
 
 describe("formatSummary", () => {
