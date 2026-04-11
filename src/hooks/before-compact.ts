@@ -10,7 +10,6 @@ const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-vcc-config.json");
 
 export interface PiVccConfig {
   debug?: boolean;
-  format?: "text" | "json";
 }
 
 const loadConfig = (): PiVccConfig => {
@@ -107,7 +106,6 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
         readFiles: [...preparation.fileOps.read],
         modifiedFiles: [...preparation.fileOps.written, ...preparation.fileOps.edited],
       },
-      format: config.format ?? "text",
     });
 
     const branchIds = branchEntries.map((e: any) => e.id);

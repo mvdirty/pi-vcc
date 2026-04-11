@@ -125,20 +125,7 @@ export interface TranscriptEntry {
 }
 
 /**
- * Compact tuple transcript entry for JSON output.
- * Format: [role, text/cmd, tool?, ref?, count?]
- * Role codes: "u" = user, "a" = assistant, "e" = tool_error
- * Trailing undefined fields are omitted.
- */
-export type CompactEntry =
-  | [role: string, text: string]
-  | [role: string, text: string, tool: string]
-  | [role: string, text: string, tool: string, ref: string]
-  | [role: string, text: string, tool: string, ref: string, count: number];
-
-/**
- * Build BriefLine sections from NormalizedBlocks (shared core logic).
- * Used by both text and JSON formatters.
+ * Build BriefLine sections from NormalizedBlocks.
  */
 export const buildBriefSections = (blocks: NormalizedBlock[]): BriefLine[] => {
   const sections: BriefLine[] = [];
@@ -313,57 +300,6 @@ export const sectionsToTranscript = (sections: BriefLine[]): TranscriptEntry[] =
           text: line,
           ...(ref && { ref }),
         });
-      }
-    }
-  }
-
-  return entries;
-};
-
-/**
- * Convert BriefLine sections to compact tuple array for JSON output.
- */
-export const sectionsToCompact = (sections: BriefLine[]): CompactEntry[] => {
-  const entries: CompactEntry[] = [];
-
-  for (const sec of sections) {
-    if (sec.header === "[user]") {
-      for (const line of sec.lines) {
-        // user text: keep ref inline -- no tool field needed
-        entries.push(["u", line]);
-      }
-    } else if (sec.header === "[assistant]") {
-      for (const line of sec.lines) {
-        if (line.startsWith("* ")) {
-          const parsed = parseToolLine(line);
-          if (parsed) {
-            // tool call: tach ref thanh element rieng
-            const text = parsed.cmd ?? "";
-            if (parsed.count && parsed.ref) {
-              entries.push(["a", text, parsed.tool, parsed.ref, parsed.count]);
-            } else if (parsed.ref) {
-              entries.push(["a", text, parsed.tool, parsed.ref]);
-            } else {
-              entries.push(["a", text, parsed.tool]);
-            }
-          } else {
-            entries.push(["a", line.slice(2)]); // strip "* "
-          }
-        } else {
-          // assistant text: keep ref inline
-          entries.push(["a", line]);
-        }
-      }
-    } else if (sec.header.startsWith("[tool_error]")) {
-      const headerMatch = sec.header.match(/^\[tool_error\]\s+(\S+)\s*(?:\(#(\d+)\))?/);
-      const tool = headerMatch?.[1] ?? "unknown";
-      const ref = headerMatch?.[2] ? `#${headerMatch[2]}` : undefined;
-      for (const line of sec.lines) {
-        if (ref) {
-          entries.push(["e", line, tool, ref]);
-        } else {
-          entries.push(["e", line, tool]);
-        }
       }
     }
   }

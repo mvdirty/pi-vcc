@@ -4,7 +4,7 @@ import type { SectionData } from "../sections";
 import { extractGoals } from "../extract/goals";
 import { extractFiles } from "../extract/files";
 import { extractPreferences } from "../extract/preferences";
-import { buildBriefSections, sectionsToTranscript, sectionsToCompact, stringifyBrief } from "./brief";
+import { buildBriefSections, sectionsToTranscript, stringifyBrief } from "./brief";
 
 export interface BuildSectionsInput {
   blocks: NormalizedBlock[];
@@ -63,6 +63,5 @@ export const buildSections = (input: BuildSectionsInput): SectionData => {
     userPreferences: extractPreferences(blocks),
     briefTranscript: stringifyBrief(briefSections),
     transcriptEntries: sectionsToTranscript(briefSections),
-    compactEntries: sectionsToCompact(briefSections),
   };
 };

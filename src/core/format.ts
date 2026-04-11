@@ -1,5 +1,4 @@
 import type { SectionData } from "../sections";
-import type { CompactEntry } from "./brief";
 
 const section = (title: string, items: string[]): string => {
   if (items.length === 0) return "";
@@ -24,8 +23,7 @@ export const RECALL_NOTE =
   "Use `vcc_recall` to search for prior work, decisions, and context from before this summary. " +
   "Do not redo work already completed.";
 
-export const formatSummary = (
-data: SectionData): string => {
+export const formatSummary = (data: SectionData): string => {
   const headerParts = [
     section("Session Goal", data.sessionGoal),
     section("Files And Changes", data.filesAndChanges),
@@ -47,34 +45,4 @@ data: SectionData): string => {
   parts.push(RECALL_NOTE);
 
   return parts.join("\n\n---\n\n");
-};
-
-export interface JsonSummary {
-  sessionGoal: string[];
-  filesAndChanges: string[];
-  outstandingContext: string[];
-  userPreferences: string[];
-  transcript: CompactEntry[];
-  note: string;
-}
-
-const BRIEF_MAX_ENTRIES = 120;
-
-const capTranscript = (entries: CompactEntry[]): CompactEntry[] => {
-  if (entries.length <= BRIEF_MAX_ENTRIES) return entries;
-  const omitted = entries.length - BRIEF_MAX_ENTRIES;
-  const kept = entries.slice(-BRIEF_MAX_ENTRIES);
-  return [["a", `...(${omitted} earlier entries omitted)`], ...kept];
-};
-
-export const formatJsonSummary = (data: SectionData): string => {
-  const obj: JsonSummary = {
-    sessionGoal: data.sessionGoal,
-    filesAndChanges: data.filesAndChanges,
-    outstandingContext: data.outstandingContext,
-    userPreferences: data.userPreferences,
-    transcript: capTranscript(data.compactEntries),
-    note: RECALL_NOTE,
-  };
-  return JSON.stringify(obj);
 };

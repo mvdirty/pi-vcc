@@ -9,7 +9,6 @@ const empty: SectionData = {
   userPreferences: [],
   briefTranscript: "",
   transcriptEntries: [],
-  compactEntries: [],
 };
 
 describe("formatSummary", () => {

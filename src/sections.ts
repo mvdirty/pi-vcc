@@ -1,4 +1,4 @@
-import type { TranscriptEntry, CompactEntry } from "./core/brief";
+import type { TranscriptEntry } from "./core/brief";
 
 export interface SectionData {
   sessionGoal: string[];
@@ -8,6 +8,4 @@ export interface SectionData {
   briefTranscript: string;
   /** Structured transcript entries (verbose object format) */
   transcriptEntries: TranscriptEntry[];
-  /** Compact tuple transcript entries for JSON output */
-  compactEntries: CompactEntry[];
 }
