@@ -73,6 +73,7 @@ Once installed, pi-vcc registers a `session_before_compact` hook.
 - To trigger compaction manually, run `/pi-vcc`.
 - To search older history after compaction, use `vcc_recall`.
 - To search and feed results to agent yourself, run `/pi-vcc-recall <query> [page:N]`.
+  - Tip: type `/recall` and Pi will autocomplete to `/pi-vcc-recall`.
 
 ### Compacted message structure
 
