@@ -41,6 +41,8 @@ Measured on real session JSONLs under `~/.pi/agent/sessions` (chars = rendered m
 - **Bounded merge** — rolling sections re-capped after merge instead of growing unbounded
 - **Lossless recall** — `vcc_recall` reads raw session JSONL, so old history stays searchable across compactions
 - **Regex search** — `vcc_recall` supports regex patterns (`hook|inject`, `fail.*build`) and OR-ranked multi-word queries
+- **Result ranking** — search results ranked by term relevance, rare terms weighted higher than common ones
+- **`/pi-vcc-recall`** — slash command to search history directly, results shown as collapsible message and auto-fed to agent as context
 - **Fallback cut** — still works when Pi core returns nothing to summarize
 - **Redaction** — strips passwords, API keys, secrets
 - **`/pi-vcc`** — manual compaction on demand
@@ -70,6 +72,7 @@ Once installed, pi-vcc registers a `session_before_compact` hook.
 - When Pi triggers a compaction, pi-vcc supplies the summary.
 - To trigger compaction manually, run `/pi-vcc`.
 - To search older history after compaction, use `vcc_recall`.
+- To search and feed results to agent yourself, run `/pi-vcc-recall <query>`.
 
 ### Compacted message structure
 
@@ -138,6 +141,7 @@ Queries support **regex** and **multi-word OR logic** ranked by relevance:
 
 ```
 vcc_recall({ query: "auth token" })           // OR search, ranked
+vcc_recall({ query: "auth token", page: 2 })  // paginated (5 results/page)
 vcc_recall({ query: "hook|inject" })           // regex pattern
 vcc_recall({ query: "fail.*build" })           // regex pattern
 ```
