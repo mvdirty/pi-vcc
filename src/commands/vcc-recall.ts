@@ -36,7 +36,7 @@ export const registerVccRecallCommand = (pi: ExtensionAPI) => {
         const { rendered } = loadAllMessages(sessionFile, false);
         const recent = rendered.slice(-DEFAULT_RECENT);
         const output = formatRecallOutput(recent);
-        pi.sendMessage({ customType: "vcc-recall", content: output, display: true });
+        pi.sendUserMessage(output);
         return;
       }
 
@@ -49,7 +49,7 @@ export const registerVccRecallCommand = (pi: ExtensionAPI) => {
         const { rendered } = loadAllMessages(sessionFile, false);
         const recent = rendered.slice(-DEFAULT_RECENT);
         const output = formatRecallOutput(recent);
-        pi.sendMessage({ customType: "vcc-recall", content: output, display: true });
+        pi.sendUserMessage(output);
         return;
       }
 
@@ -66,7 +66,7 @@ export const registerVccRecallCommand = (pi: ExtensionAPI) => {
         ? `\n--- /vcc-recall ${query} page:${page + 1} ---`
         : "";
       const output = formatRecallOutput(pageResults, query, header) + footer;
-      pi.sendMessage({ customType: "vcc-recall", content: output, display: true });
+      pi.sendUserMessage(output);
     },
   });
 };
