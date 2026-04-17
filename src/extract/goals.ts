@@ -10,8 +10,24 @@ const TASK_RE =
 
 const NOISE_SHORT_RE = /^(ok|yes|no|sure|yeah|yep|go|hi|hey|thx|thanks|ok\b.*|y|n|k)\s*[.!?]*$/i;
 
-const isSubstantiveGoal = (text: string): boolean =>
-  text.length > 5 && !NOISE_SHORT_RE.test(text.trim());
+// Reject lines that are clearly not user goals (pasted output, code, paths, tool dumps).
+const NON_GOAL_RE =
+  /^\s*[\[│├└─╭╰]|```|^\s*(=[A-Z]+\(|function |const |let |var |import |export |class )|^(https?:|file:|\/[A-Za-z])|\\n/;
+
+const MAX_GOAL_CHARS = 200;
+
+const isSubstantiveGoal = (text: string): boolean => {
+  const t = text.trim();
+  if (t.length <= 5) return false;
+  if (t.length > MAX_GOAL_CHARS) return false;
+  if (NOISE_SHORT_RE.test(t)) return false;
+  if (NON_GOAL_RE.test(t)) return false;
+  return true;
+};
+
+// Test scope-change / task intent only on the leading portion of a user block
+// so that pasted outputs below the actual instruction do not trigger matches.
+const LEADING_CHARS = 200;
 
 export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
   const goals: string[] = [];
@@ -27,14 +43,16 @@ export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
       continue;
     }
 
-    if (SCOPE_CHANGE_RE.test(b.text)) {
-      latestScopeChange = lines.slice(0, 3).map((l) => clip(l, 200));
-    } else if (TASK_RE.test(b.text) && lines[0].length > 15) {
-      latestScopeChange = lines.slice(0, 2).map((l) => clip(l, 200));
+    const leading = b.text.slice(0, LEADING_CHARS);
+    if (SCOPE_CHANGE_RE.test(leading)) {
+      latestScopeChange = lines.slice(0, 3).map((l) => clip(l, MAX_GOAL_CHARS));
+    } else if (TASK_RE.test(leading) && lines[0].length > 15) {
+      latestScopeChange = lines.slice(0, 2).map((l) => clip(l, MAX_GOAL_CHARS));
     }
   }
 
-  if (latestScopeChange) {
+  // Only emit the [Scope change] marker when we actually captured bullets.
+  if (latestScopeChange && latestScopeChange.length > 0) {
     goals.push("[Scope change]", ...latestScopeChange);
   }
 

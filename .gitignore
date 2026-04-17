@@ -6,3 +6,4 @@ bun.lock
 docs/
 run_compare.ts
 .pi-mux-state.json
+research/

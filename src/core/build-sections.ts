@@ -3,7 +3,7 @@ import { clip, firstLine, nonEmptyLines } from "./content";
 import type { SectionData } from "../sections";
 import { extractGoals } from "../extract/goals";
 import { extractFiles } from "../extract/files";
-import { extractPreferences } from "../extract/preferences";
+import { extractPreferences, dedupPreferencesAgainstGoals } from "../extract/preferences";
 import { buildBriefSections, sectionsToTranscript, stringifyBrief } from "./brief";
 
 export interface BuildSectionsInput {
@@ -56,11 +56,16 @@ const formatFileActivity = (blocks: NormalizedBlock[]): string[] => {
 export const buildSections = (input: BuildSectionsInput): SectionData => {
   const { blocks } = input;
   const briefSections = buildBriefSections(blocks);
+  const sessionGoal = extractGoals(blocks);
+  const userPreferences = dedupPreferencesAgainstGoals(
+    extractPreferences(blocks),
+    sessionGoal,
+  );
   return {
-    sessionGoal: extractGoals(blocks),
+    sessionGoal,
     outstandingContext: extractOutstandingContext(blocks),
     filesAndChanges: formatFileActivity(blocks),
-    userPreferences: extractPreferences(blocks),
+    userPreferences,
     briefTranscript: stringifyBrief(briefSections),
     transcriptEntries: sectionsToTranscript(briefSections),
   };
