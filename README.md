@@ -106,19 +106,12 @@ Fix the auth bug, users can't log in after password reset
 [assistant]
 Root cause is a missing token refresh after password reset...
 * bash "bun test tests/auth.test.ts" (#12)
-Tests: 8 passed, 4 failed — the refresh token isn't being set.
 * edit "src/auth/session.ts" (#14)
-Added token refresh call after password reset flow.
 * bash "bun test tests/auth.test.ts" (#16)
-Tests: 12 passed, 0 failed ✓
-
-[user]
-also update the session expiry logic
-
-[assistant]
-* bash "grep -n 'expiry' src/auth/session.ts" (#18)
-...(truncated)
+...(28 earlier lines omitted)
 ```
+
+Sections appear only when relevant — a session with no git commits won't have `[Commits]`.
 
 **Sections:**
 
