@@ -4,7 +4,6 @@ import { normalize } from "./normalize";
 import { filterNoise } from "./filter-noise";
 import { buildSections } from "./build-sections";
 import { formatSummary, capBrief } from "./format";
-import { redact } from "./redact";
 
 export interface CompileInput {
   messages: Message[];
@@ -140,5 +139,5 @@ export const compile = (input: CompileInput): string => {
   const data = buildSections({ blocks });
   const fresh = formatSummary(data);
   const merged = input.previousSummary ? mergePrevious(input.previousSummary, fresh) : fresh;
-  return redact(merged);
+  return merged;
 };

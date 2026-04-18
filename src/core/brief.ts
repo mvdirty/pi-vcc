@@ -1,6 +1,5 @@
 import type { NormalizedBlock } from "../types";
 import { clip, firstLine } from "./content";
-import { redact } from "./redact";
 import { extractPath } from "./tool-args";
 import { collapseSkillText } from "./skill-collapse";
 
@@ -103,7 +102,7 @@ const toolOneLiner = (name: string, args: Record<string, unknown>): string => {
   if (name === "bash" || name === "Bash") {
     const raw = (args.command ?? args.description ?? "") as string;
     const cmd = compressBash(raw);
-    return `* ${name} "${redact(cmd)}"`;
+    return `* ${name} "${cmd}"`;
   }
   if (typeof args.query === "string") {
     return `* ${name} "${clip(args.query as string, 60)}"`;
