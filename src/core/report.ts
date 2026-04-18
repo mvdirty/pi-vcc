@@ -6,7 +6,7 @@ import { renderMessage } from "./render-entries";
 import { searchEntries } from "./search-entries";
 import { type CompileInput, compile } from "./summarize";
 
-const SECTION_HEADERS = ["Session Goal", "Files And Changes", "Outstanding Context"];
+const SECTION_HEADERS = ["Session Goal", "Files And Changes", "Commits", "Outstanding Context"];
 
 interface RoleCounts {
   user: number;
