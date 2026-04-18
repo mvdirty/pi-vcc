@@ -74,6 +74,10 @@ Once installed, pi-vcc registers a `session_before_compact` hook.
 - To search and feed results to agent yourself, run `/pi-vcc-recall <query> [page:N]`.
   - Tip: type `/recall` and Pi will autocomplete to `/pi-vcc-recall`.
 
+### How compaction works
+
+Pi splits the conversation at the **last user message**. Everything after — the **kept tail** — stays intact and untouched. pi-vcc only summarizes the older portion before that cut point.
+
 ### Compacted message structure
 
 ```
