@@ -42,8 +42,8 @@ export const formatSummary = (data: SectionData): string => {
 
   if (parts.length === 0) return "";
 
-  // Hint: remind AI that older conversation is searchable via vcc_recall
-  parts.push(RECALL_NOTE);
-
+  // NOTE: RECALL_NOTE is intentionally NOT appended here.
+  // It is appended once by `compile()` at the very end, after merge-with-previous,
+  // to avoid the note compounding inside the brief transcript across compactions.
   return parts.join("\n\n---\n\n");
 };
