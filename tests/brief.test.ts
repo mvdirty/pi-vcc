@@ -164,4 +164,31 @@ describe("compileBrief", () => {
     // So all under one [assistant]
     expect(r.match(/\[assistant\]/g)?.length).toBe(1);
   });
+
+  it("caps tool calls per [assistant] turn at 8 (keep tail)", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "assistant", text: "Working." },
+    ];
+    for (let i = 1; i <= 12; i++) {
+      blocks.push({ kind: "tool_call", name: "bash", args: { command: `echo ${i}` } });
+    }
+    const r = compileBrief(blocks);
+    expect(r).toContain("(4 earlier tool-call entries omitted)");
+    // Last 8 (5..12) kept; first 4 dropped
+    expect(r).not.toContain("echo 1\"");
+    expect(r).not.toContain("echo 4\"");
+    expect(r).toContain("echo 5");
+    expect(r).toContain("echo 12");
+  });
+
+  it("does not cap when tool calls per turn <= 8", () => {
+    const blocks: NormalizedBlock[] = [{ kind: "assistant", text: "ok" }];
+    for (let i = 1; i <= 8; i++) {
+      blocks.push({ kind: "tool_call", name: "bash", args: { command: `c${i}` } });
+    }
+    const r = compileBrief(blocks);
+    expect(r).not.toContain("entries omitted");
+    expect(r).toContain("c1");
+    expect(r).toContain("c8");
+  });
 });

@@ -2,7 +2,7 @@ node_modules/
 dist/
 bun.lock
 *.tsbuildinfo
-.pi/
+.pi*
 docs/
 run_compare.ts
 .pi-mux-state.json

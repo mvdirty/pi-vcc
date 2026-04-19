@@ -1,12 +1,10 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { convertToLlm } from "@mariozechner/pi-coding-agent";
-import { readFileSync, writeFileSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
+import { writeFileSync } from "fs";
 import { compile } from "../core/summarize";
+import { loadSettings, type PiVccSettings } from "../core/settings";
 import type { PiVccCompactionDetails } from "../details";
 
-const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-vcc-config.json");
 export const PI_VCC_COMPACT_INSTRUCTION = "__pi_vcc__";
 
 export interface CompactionStats {
@@ -18,16 +16,8 @@ export interface CompactionStats {
 let lastStats: CompactionStats | null = null;
 export const getLastCompactionStats = () => lastStats;
 
-export interface PiVccConfig {
-  debug?: boolean;
-}
-
-const loadConfig = (): PiVccConfig => {
-  try { return JSON.parse(readFileSync(CONFIG_PATH, "utf-8")); } catch { return {}; }
-};
-
-const dbg = (config: PiVccConfig, data: Record<string, unknown>) => {
-  if (!config.debug) return;
+const dbg = (settings: PiVccSettings, data: Record<string, unknown>) => {
+  if (!settings.debug) return;
   try { writeFileSync("/tmp/pi-vcc-debug.json", JSON.stringify(data, null, 2)); } catch {}
 };
 
@@ -99,7 +89,12 @@ function buildOwnCut(branchEntries: any[]): { messages: any[]; firstKeptEntryId:
 export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
   pi.on("session_before_compact", (event) => {
     const { preparation, branchEntries, customInstructions } = event;
-    if (customInstructions !== PI_VCC_COMPACT_INSTRUCTION) return;
+    const settings = loadSettings();
+
+    // Always handle explicit /pi-vcc marker.
+    // Otherwise, only handle when user opted in via settings.
+    const isPiVcc = customInstructions === PI_VCC_COMPACT_INSTRUCTION;
+    if (!isPiVcc && !settings.overrideDefaultCompaction) return;
 
     const ownCut = buildOwnCut(branchEntries as any[]);
     if (!ownCut) return { cancel: true };
@@ -130,7 +125,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       keptTokensEst: Math.round(keptChars / 4),
     };
 
-    const config = loadConfig();
+    const config = settings;
 
     const summary = compile({
       messages,

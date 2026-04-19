@@ -218,6 +218,31 @@ export const buildBriefSections = (blocks: NormalizedBlock[]): BriefLine[] => {
     sec.lines = out;
   }
 
+  // Cap tool calls per [assistant] turn — keep tail (latest actions tend to
+  // be the deciding edits/writes; head is usually exploration noise).
+  const TOOL_CALLS_PER_TURN = 8;
+  for (const sec of sections) {
+    if (sec.header !== "[assistant]") continue;
+    const toolIdxs = sec.lines
+      .map((l, i) => (l.startsWith("* ") ? i : -1))
+      .filter((i) => i >= 0);
+    if (toolIdxs.length <= TOOL_CALLS_PER_TURN) continue;
+    const dropCount = toolIdxs.length - TOOL_CALLS_PER_TURN;
+    const dropSet = new Set(toolIdxs.slice(0, dropCount));
+    const firstKeptToolIdx = toolIdxs[dropCount];
+    const next: string[] = [];
+    let inserted = false;
+    for (let i = 0; i < sec.lines.length; i++) {
+      if (dropSet.has(i)) continue;
+      if (!inserted && i === firstKeptToolIdx) {
+        next.push(`* (${dropCount} earlier tool-call entries omitted)`);
+        inserted = true;
+      }
+      next.push(sec.lines[i]);
+    }
+    sec.lines = next;
+  }
+
   // Collapse consecutive identical [tool_error] sections (same tool, same body).
   // E.g. 20 back-to-back `[tool_error] bash (#N) ... Command aborted` become one
   // `[tool_error] bash (#refs...) x20` entry.
