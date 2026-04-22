@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
 
-export const SETTINGS_PATH = join(homedir(), ".pi", "agent", "pi-vcc-config.json");
+export const SETTINGS_PATH_DEFAULT = join(homedir(), ".pi", "agent", "pi-vcc-config.json");
+const settingsPath = (): string => process.env.PI_VCC_CONFIG_PATH ?? SETTINGS_PATH_DEFAULT;
+/** Backwards-compat export. Resolves at access time, not import time. */
+export const SETTINGS_PATH = settingsPath();
 
 export interface PiVccSettings {
   /**
@@ -34,7 +37,7 @@ const readJson = (path: string): Record<string, unknown> | null => {
 };
 
 export function loadSettings(): PiVccSettings {
-  const parsed = readJson(SETTINGS_PATH);
+  const parsed = readJson(settingsPath());
   if (!parsed || typeof parsed !== "object") return { ...DEFAULT_SETTINGS };
   return { ...DEFAULT_SETTINGS, ...(parsed as Partial<PiVccSettings>) };
 }
@@ -47,15 +50,16 @@ export function loadSettings(): PiVccSettings {
  */
 export function scaffoldSettings(): void {
   try {
-    const dir = dirname(SETTINGS_PATH);
+    const path = settingsPath();
+    const dir = dirname(path);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
-    if (!existsSync(SETTINGS_PATH)) {
-      writeFileSync(SETTINGS_PATH, `${JSON.stringify(DEFAULT_SETTINGS, null, 2)}\n`);
+    if (!existsSync(path)) {
+      writeFileSync(path, `${JSON.stringify(DEFAULT_SETTINGS, null, 2)}\n`);
       return;
     }
 
-    const parsed = readJson(SETTINGS_PATH);
+    const parsed = readJson(path);
     if (!parsed || typeof parsed !== "object") return; // don't clobber
 
     let changed = false;
@@ -66,7 +70,7 @@ export function scaffoldSettings(): void {
         changed = true;
       }
     }
-    if (changed) writeFileSync(SETTINGS_PATH, `${JSON.stringify(next, null, 2)}\n`);
+    if (changed) writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
   } catch {
     // best-effort; never crash extension load
   }

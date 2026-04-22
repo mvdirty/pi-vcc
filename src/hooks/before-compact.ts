@@ -43,7 +43,7 @@ interface EntryWithMessage {
   message: { role: string; content: unknown };
 }
 
-function buildOwnCut(branchEntries: any[]): { messages: any[]; firstKeptEntryId: string } | null {
+export function buildOwnCut(branchEntries: any[]): { messages: any[]; firstKeptEntryId: string } | null {
   // Find the last compaction entry and its firstKeptEntryId
   let lastCompactionIdx = -1;
   let lastKeptId: string | undefined;
@@ -97,7 +97,34 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     if (!isPiVcc && !settings.overrideDefaultCompaction) return;
 
     const ownCut = buildOwnCut(branchEntries as any[]);
-    if (!ownCut) return { cancel: true };
+    if (!ownCut) {
+      const lastComp = [...branchEntries].reverse().find((e: any) => e.type === "compaction");
+      const lastCompIdx = lastComp ? (branchEntries as any[]).indexOf(lastComp) : -1;
+      dbg(settings, {
+        cancelled: true,
+        reason: "ownCut_null",
+        isPiVcc,
+        counts: {
+          total: branchEntries.length,
+          messages: (branchEntries as any[]).filter((e: any) => e.type === "message").length,
+          compactions: (branchEntries as any[]).filter((e: any) => e.type === "compaction").length,
+          entriesAfterLastCompaction: lastCompIdx >= 0 ? branchEntries.length - lastCompIdx - 1 : null,
+        },
+        lastCompaction: lastComp ? {
+          hasFirstKeptEntryId: !!lastComp.firstKeptEntryId,
+          foundInBranch: lastComp.firstKeptEntryId
+            ? (branchEntries as any[]).some((e: any) => e.id === lastComp.firstKeptEntryId)
+            : null,
+        } : null,
+        tail: (branchEntries as any[]).slice(-5).map((e: any) => ({
+          type: e.type,
+          role: e.type === "message" ? e.message?.role : undefined,
+          hasContent: e.type === "message" ? e.message?.content != null : undefined,
+        })),
+      });
+
+      return { cancel: true };
+    }
 
     const agentMessages = ownCut.messages;
     const firstKeptEntryId = ownCut.firstKeptEntryId;
