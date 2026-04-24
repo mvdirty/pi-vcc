@@ -22,11 +22,11 @@ describe("extractGoals", () => {
     expect(goals).toEqual(["Fix login bug", "Check auth flow"]);
   });
 
-  it("takes max 3 lines from first user block", () => {
+  it("takes up to 6 lines from first user block", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "user", text: "fix the login bug\ncheck auth flow\nupdate the tests\nrefactor utils\nclean up" },
     ];
-    expect(extractGoals(blocks)).toHaveLength(3);
+    expect(extractGoals(blocks)).toHaveLength(5);
   });
 
   it("ignores subsequent user blocks", () => {

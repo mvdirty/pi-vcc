@@ -9,7 +9,7 @@ const TRUNCATE_ASSISTANT = 200;
 // Strip common self-reflective assistant prefixes that carry no semantic info.
 // Conservative list: only removes the leading filler, preserves the actual content.
 const SELF_TALK_PREFIX_RE =
-  /^\s*(?:hmm|wait|actually|oh|okay|ok|well|so|let me (?:try|check|see|think|look))[,.!\s-]+/i;
+  /^\s*(?:hmm|wait|actually|oh|okay|ok|well|so)[,.!\s-]+/i;
 
 // ── noise filtering ──
 

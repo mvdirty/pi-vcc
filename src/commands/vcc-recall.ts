@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadAllMessages } from "../core/load-messages";
 import { searchEntries } from "../core/search-entries";
 import { formatRecallOutput } from "../core/format-recall";
+import { getActiveLineageEntryIds } from "../core/lineage";
 
 const PAGE_SIZE = 5;
 const DEFAULT_RECENT = 25;
@@ -16,10 +17,11 @@ export const registerVccRecallCommand = (pi: ExtensionAPI) => {
         return;
       }
 
+      const lineageEntryIds = getActiveLineageEntryIds(ctx.sessionManager);
       const raw = args.trim();
       if (!raw) {
         // No query: show recent
-        const { rendered } = loadAllMessages(sessionFile, false);
+        const { rendered } = loadAllMessages(sessionFile, false, lineageEntryIds);
         const recent = rendered.slice(-DEFAULT_RECENT);
         const output = formatRecallOutput(recent);
         pi.sendMessage({ customType: "vcc-recall", content: output, display: true }, { triggerTurn: true });
@@ -32,14 +34,14 @@ export const registerVccRecallCommand = (pi: ExtensionAPI) => {
       const query = raw.replace(/\bpage:\d+\b/i, "").trim();
 
       if (!query) {
-        const { rendered } = loadAllMessages(sessionFile, false);
+        const { rendered } = loadAllMessages(sessionFile, false, lineageEntryIds);
         const recent = rendered.slice(-DEFAULT_RECENT);
         const output = formatRecallOutput(recent);
         pi.sendMessage({ customType: "vcc-recall", content: output, display: true }, { triggerTurn: true });
         return;
       }
 
-      const { rendered, rawMessages } = loadAllMessages(sessionFile, false);
+      const { rendered, rawMessages } = loadAllMessages(sessionFile, false, lineageEntryIds);
       const allResults = searchEntries(rendered, rawMessages, query);
 
       const start = (page - 1) * PAGE_SIZE;

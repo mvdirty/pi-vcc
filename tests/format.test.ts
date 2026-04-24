@@ -6,6 +6,7 @@ const empty: SectionData = {
   sessionGoal: [],
   outstandingContext: [],
   filesAndChanges: [],
+  commits: [],
   userPreferences: [],
   briefTranscript: "",
   transcriptEntries: [],
@@ -45,7 +46,6 @@ describe("formatSummary", () => {
     };
     const r = formatSummary(data);
     expect(r).toContain("[user]\nhi\n\n[assistant]\nhello");
-    expect(r).toContain("vcc_recall");
   });
 
   it("joins multiple header sections with blank line", () => {

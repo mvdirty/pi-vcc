@@ -3,23 +3,27 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadAllMessages } from "../core/load-messages";
 import { searchEntries } from "../core/search-entries";
 import { formatRecallOutput } from "../core/format-recall";
+import { getActiveLineageEntryIds } from "../core/lineage";
 
 const DEFAULT_RECENT = 25;
 const PAGE_SIZE = 5;
+
+export const invalidExpandIndices = (requested: number[], available: Set<number>): number[] =>
+  requested.filter((i) => !Number.isInteger(i) || !available.has(i));
 
 export const registerRecallTool = (pi: ExtensionAPI) => {
   pi.registerTool({
     name: "vcc_recall",
     label: "VCC Recall",
     description:
-      "Search full conversation history in this session, including before compaction." +
+      "Search conversation history in the active lineage for this session, including before compaction on that lineage." +
       " Use without query to see recent brief history." +
-      " Use with query to search all history. Query supports regex (e.g. 'hook|inject', 'fail.*build')." +
+      " Use with query to search history. Query supports regex (e.g. 'hook|inject', 'fail.*build')." +
       " Multi-word queries use OR logic ranked by relevance — use keywords, not full sentences." +
       " Use expand with entry indices to get full content (note: some tool results may already be truncated by Pi core before saving)." +
       " Search returns 5 results per page — use page:N for more.",
     promptSnippet:
-      "vcc_recall: Search full conversation history including compacted parts." +
+      "vcc_recall: Search active-lineage conversation history including compacted parts." +
       " Supports regex (e.g. 'hook|inject'). Multi-word = OR + ranked." +
       " Use expand:[indices] for full content.",
     parameters: Type.Object({
@@ -42,18 +46,23 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
         };
       }
 
+      const lineageEntryIds = getActiveLineageEntryIds(ctx.sessionManager);
       const expandSet = new Set(params.expand ?? []);
       const hasExpand = expandSet.size > 0;
 
       if (hasExpand && !params.query) {
-        const { rendered: fullMsgs } = loadAllMessages(sessionFile, true);
-        const expanded = fullMsgs.filter((m) => expandSet.has(m.index));
-        if (expanded.length === 0) {
+        const { rendered: fullMsgs } = loadAllMessages(sessionFile, true, lineageEntryIds);
+        const requested = [...expandSet];
+        const byIndex = new Map(fullMsgs.map((m) => [m.index, m]));
+        const invalid = invalidExpandIndices(requested, new Set(byIndex.keys()));
+        if (invalid.length > 0) {
           return {
-            content: [{ type: "text", text: `No entries found for indices: ${[...expandSet].join(", ")}` }],
+            content: [{ type: "text", text: `Cannot expand indices outside active lineage: ${invalid.join(", ")}` }],
             details: undefined,
           };
         }
+
+        const expanded = requested.map((i) => byIndex.get(i)).filter((m): m is NonNullable<typeof m> => Boolean(m));
         const output = formatRecallOutput(expanded);
         return {
           content: [{ type: "text", text: output }],
@@ -61,7 +70,7 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
         };
       }
 
-      const { rendered: msgs, rawMessages } = loadAllMessages(sessionFile, false);
+      const { rendered: msgs, rawMessages } = loadAllMessages(sessionFile, false, lineageEntryIds);
       const allResults = params.query?.trim()
         ? searchEntries(msgs, rawMessages, params.query)
         : msgs.slice(-DEFAULT_RECENT);

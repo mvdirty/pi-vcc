@@ -19,6 +19,18 @@ describe("compileBrief", () => {
     expect(r).toContain("Let me look at the auth module.");
   });
 
+  it("strips filler prefixes but preserves meaningful lead-ins", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "assistant", text: "Okay, I found the root cause." },
+      { kind: "assistant", text: "Actually, the issue is in middleware." },
+      { kind: "assistant", text: "Let me check the logs." },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("I found the root cause.");
+    expect(r).toContain("the issue is in middleware.");
+    expect(r).toContain("Let me check the logs.");
+  });
+
   it("collapses tool calls to one-liners under [assistant]", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "assistant", text: "Let me check." },
