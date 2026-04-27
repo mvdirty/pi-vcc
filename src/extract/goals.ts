@@ -14,6 +14,7 @@ const PREFERENCE_WITH_TASK_RE =
   /\b(fix|implement|add|create|build|refactor|debug|investigate|update|remove|delete|migrate|deploy|write|set up)\b/i;
 
 const NOISE_SHORT_RE = /^(ok|yes|no|sure|yeah|yep|go|hi|hey|thx|thanks|ok\b.*|y|n|k)\s*[.!?]*$/i;
+const VOLATILE_STATUS_RE = /^\s*(?:current blocker|blocker update|status update|next step)\s*:/i;
 
 // Reject lines that are clearly not user goals (pasted output, code, paths, tool dumps)
 // or meta-prompt boilerplate (command templates like `/issues` that start with "For each issue:"
@@ -44,6 +45,7 @@ const isSubstantiveGoal = (text: string): boolean => {
   if (t.length <= 5) return false;
   if (t.length > MAX_GOAL_CHARS) return false;
   if (NOISE_SHORT_RE.test(t)) return false;
+  if (VOLATILE_STATUS_RE.test(t)) return false;
   if (NON_GOAL_RE.test(t)) return false;
   if (isPreferenceOnly(t)) return false;
   return true;

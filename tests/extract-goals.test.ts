@@ -83,4 +83,15 @@ describe("extractGoals", () => {
     expect(goals[0]).toContain("Fix the authentication");
     expect(goals.some((g) => g === "ok")).toBe(false);
   });
+
+  it("keeps volatile blocker updates out of stable goals", () => {
+    const goals = extractGoals([
+      { kind: "user", text: "Benchmark cache-aware compaction. Stable objective: preserve Layer 0 and Layer 1 prefixes." },
+      { kind: "user", text: "Blocker update: offline LCP metrics are done; now add recall top-k metrics." },
+      { kind: "user", text: "Current blocker: cached-token accounting is missing." },
+    ]);
+    expect(goals).toEqual([
+      "Benchmark cache-aware compaction. Stable objective: preserve Layer 0 and Layer 1 prefixes.",
+    ]);
+  });
 });
