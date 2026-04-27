@@ -105,6 +105,22 @@ const cacheBoundaries = {
     ],
     minStablePrefixTokens: 110,
   },
+  "cache-bust-mutable-tail-growth": {
+    allowedFirstChangedLayers: [
+      "Pi VCC Recent Scope Updates",
+      "Pi VCC Recent User Preferences",
+      "Pi VCC Recent Evidence Handles",
+      "Pi VCC Outstanding Context",
+      "Pi VCC Brief Transcript",
+      "Kept Raw Tail",
+    ],
+    minStablePrefixTokens: 140,
+    maxPromptLayerSizes: {
+      "Pi VCC Recent Scope Updates": 420,
+      "Pi VCC Recent User Preferences": 360,
+      "Pi VCC Recent Evidence Handles": 260,
+    },
+  },
 };
 
 const cacheFailures = (cycle) => {
@@ -113,6 +129,9 @@ const cacheFailures = (cycle) => {
   let count = 0;
   if (!cycle.firstChangedPromptLayer || !boundary.allowedFirstChangedLayers.includes(cycle.firstChangedPromptLayer)) count += 1;
   if ((cycle.stablePrefixTokens ?? 0) < boundary.minStablePrefixTokens) count += 1;
+  for (const [layer, maxSize] of Object.entries(boundary.maxPromptLayerSizes ?? {})) {
+    if ((cycle.promptLayerSizes?.[layer] ?? 0) > maxSize) count += 1;
+  }
   return count;
 };
 

@@ -695,7 +695,13 @@ export const failedGatesOf = (cycle: CycleMetrics): string[] => {
   return failures;
 };
 
-const CACHE_BOUNDARIES: Record<string, { allowedFirstChangedLayers: string[]; minStablePrefixTokens: number }> = {
+interface CacheBoundary {
+  allowedFirstChangedLayers: string[];
+  minStablePrefixTokens: number;
+  maxPromptLayerSizes?: Record<string, number>;
+}
+
+const CACHE_BOUNDARIES: Record<string, CacheBoundary> = {
   "cache-bust-volatile-next-step": {
     allowedFirstChangedLayers: [
       "Pi VCC Outstanding Context",
@@ -720,6 +726,22 @@ const CACHE_BOUNDARIES: Record<string, { allowedFirstChangedLayers: string[]; mi
     ],
     minStablePrefixTokens: 110,
   },
+  "cache-bust-mutable-tail-growth": {
+    allowedFirstChangedLayers: [
+      "Pi VCC Recent Scope Updates",
+      "Pi VCC Recent User Preferences",
+      "Pi VCC Recent Evidence Handles",
+      "Pi VCC Outstanding Context",
+      "Pi VCC Brief Transcript",
+      "Kept Raw Tail",
+    ],
+    minStablePrefixTokens: 140,
+    maxPromptLayerSizes: {
+      "Pi VCC Recent Scope Updates": 420,
+      "Pi VCC Recent User Preferences": 360,
+      "Pi VCC Recent Evidence Handles": 260,
+    },
+  },
 };
 
 export const failedCacheGatesOf = (cycle: CycleMetrics): string[] => {
@@ -732,6 +754,9 @@ export const failedCacheGatesOf = (cycle: CycleMetrics): string[] => {
     failures.push("unexpected-first-changed-layer");
   }
   if ((cycle.stablePrefixTokens ?? 0) < boundary.minStablePrefixTokens) failures.push("stable-prefix-too-small");
+  for (const [layer, maxSize] of Object.entries(boundary.maxPromptLayerSizes ?? {})) {
+    if ((cycle.promptLayerSizes[layer] ?? 0) > maxSize) failures.push(`recent-layer-too-large:${layer}`);
+  }
   return failures;
 };
 

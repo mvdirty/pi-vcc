@@ -77,6 +77,21 @@ describe("compaction state", () => {
     ]);
   });
 
+  it("caps recent mutable sections to the latest items", () => {
+    const state = buildCompactionState(sectionData({ sessionGoal: ["Benchmark compaction"] }));
+    state.current.recentScopeUpdates = Array.from({ length: 8 }, (_, i) => `scope-${i + 1}`);
+    state.current.recentUserPreferences = Array.from({ length: 8 }, (_, i) => `pref-${i + 1}`);
+    state.current.recentEvidenceHandles = Array.from({ length: 10 }, (_, i) => `evidence-${i + 1}`);
+    const rendered = renderCompactionState(state);
+    const lines = rendered.text.split("\n");
+    expect(lines).not.toContain("- scope-1");
+    expect(lines).toContain("- scope-8");
+    expect(lines).not.toContain("- pref-1");
+    expect(lines).toContain("- pref-8");
+    expect(lines).not.toContain("- evidence-1");
+    expect(lines).toContain("- evidence-10");
+  });
+
   it("parses rendered summary back into structured state", () => {
     const rendered = renderCompactionState(buildCompactionState(sectionData({
       sessionGoal: ["Benchmark compaction"],

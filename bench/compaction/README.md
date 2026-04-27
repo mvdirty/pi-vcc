@@ -152,6 +152,7 @@ The current cache-boundary probes are:
 - `cache-bust-volatile-next-step`: first change should be `Pi VCC Outstanding Context` or later.
 - `cache-bust-evidence-growth`: first change should be `Pi VCC Recent Evidence Handles` or later.
 - `cache-bust-scope-growth`: first change should be `Pi VCC Recent Scope Updates` or later.
+- `cache-bust-mutable-tail-growth`: first change should be in a recent/volatile layer and recent layer sizes must stay under their caps.
 
 Append sampled real Pi sessions from a local session directory. Real-session cases have no gold state assertions; they are useful for size, latency, growth, and cache-churn signals:
 

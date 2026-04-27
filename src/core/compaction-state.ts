@@ -65,9 +65,21 @@ const stateKeyOf = (section: CurrentSectionName): keyof CompactionState["current
   }
 };
 
-const section = (title: string, items: string[]): string => {
-  if (items.length === 0) return "";
-  const body = items.map((item) => `- ${item}`).join("\n");
+export const RECENT_SECTION_ITEM_LIMITS: Partial<Record<CurrentSectionName, number>> = {
+  "Recent Scope Updates": 6,
+  "Recent User Preferences": 6,
+  "Recent Evidence Handles": 8,
+};
+
+const cappedItems = (title: CurrentSectionName, items: string[]): string[] => {
+  const limit = RECENT_SECTION_ITEM_LIMITS[title];
+  return limit && items.length > limit ? items.slice(-limit) : items;
+};
+
+const section = (title: CurrentSectionName, items: string[]): string => {
+  const capped = cappedItems(title, items);
+  if (capped.length === 0) return "";
+  const body = capped.map((item) => `- ${item}`).join("\n");
   return `[${title}]\n${body}`;
 };
 
