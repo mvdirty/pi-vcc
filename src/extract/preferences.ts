@@ -25,6 +25,7 @@ export const extractPreferences = (blocks: NormalizedBlock[]): string[] => {
       if (trimmed.length > 200) continue;
       // Reject questions.
       if (trimmed.endsWith("?") || trimmed.includes("?...")) continue;
+      if (/\b(SYNTAX_ERROR|Stack trace|Exception|Traceback)\b/i.test(trimmed)) continue;
       if (!PREF_PATTERNS.some((p) => p.test(trimmed))) continue;
 
       const clipped = clip(trimmed, 200);
