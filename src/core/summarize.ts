@@ -12,6 +12,19 @@ export interface CompileInput {
   fileOps?: FileOps;
 }
 
+export type CompiledLayerRole = "current" | "history" | "recall";
+
+export interface CompiledSummaryLayer {
+  name: string;
+  role: CompiledLayerRole;
+  text: string;
+}
+
+export interface CompileWithLayersResult {
+  text: string;
+  layers: CompiledSummaryLayer[];
+}
+
 const HEADER_NAMES = ["Session Goal", "Current Scope", "Files And Changes", "Commits", "Evidence Handles", "User Preferences", "Outstanding Context"];
 
 const SEPARATOR = "\n\n---\n\n";
@@ -119,6 +132,31 @@ const mergeBriefTranscript = (prev: string, fresh: string): string => {
   return prev + "\n\n" + fresh;
 };
 
+const layersOfCurrentSections = (current: string): CompiledSummaryLayer[] =>
+  HEADER_NAMES.map((header) => sectionOf(current, header))
+    .filter(Boolean)
+    .map((text) => {
+      const header = text.match(/^\[(.+?)\]/)?.[1] ?? "Current Sections";
+      return { name: `Pi VCC ${header}`, role: "current" as const, text };
+    });
+
+const layersOfCompiledSummary = (summary: string): CompiledSummaryLayer[] => {
+  const parts = summary.split(SEPARATOR).map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) return [];
+
+  const last = parts[parts.length - 1];
+  const hasRecallNote = last === RECALL_NOTE;
+  const bodyParts = hasRecallNote ? parts.slice(0, -1) : parts;
+  const current = bodyParts[0] ?? "";
+  const history = bodyParts.slice(1).join(SEPARATOR);
+  const layers: CompiledSummaryLayer[] = [];
+
+  if (current) layers.push(...layersOfCurrentSections(current));
+  if (history) layers.push({ name: "Pi VCC Brief Transcript", role: "history", text: history });
+  if (hasRecallNote) layers.push({ name: "Pi VCC Recall Note", role: "recall", text: RECALL_NOTE });
+  return layers;
+};
+
 const demoteFreshGoalToScope = (fresh: string): string => {
   const goal = sectionOf(fresh, "Session Goal");
   if (!goal) return fresh;
@@ -167,7 +205,9 @@ const mergePrevious = (prev: string, fresh: string): string => {
   return parts.join(SEPARATOR);
 };
 
-export const compile = (input: CompileInput): string => {
+export const compile = (input: CompileInput): string => compileWithLayers(input).text;
+
+export const compileWithLayers = (input: CompileInput): CompileWithLayersResult => {
   const blocks = filterNoise(normalize(input.messages));
   const data = buildSections({ blocks });
   const fresh = formatSummary(data);
@@ -177,8 +217,9 @@ export const compile = (input: CompileInput): string => {
     ? stripRecallNote(input.previousSummary)
     : undefined;
   const merged = prev ? mergePrevious(prev, fresh) : fresh;
-  if (!merged) return "";
-  return merged + SEPARATOR + RECALL_NOTE;
+  if (!merged) return { text: "", layers: [] };
+  const text = merged + SEPARATOR + RECALL_NOTE;
+  return { text, layers: layersOfCompiledSummary(text) };
 };
 
 const stripRecallNote = (text: string): string => {

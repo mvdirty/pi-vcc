@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { compile } from "../src/core/summarize";
+import { compile, compileWithLayers } from "../src/core/summarize";
 import {
   userMsg,
   assistantText,
@@ -26,6 +26,21 @@ describe("compile", () => {
     expect(r).toContain("[user]\nFix login bug");
     expect(r).toContain('* Read "auth.ts"');
     expect(r).toContain("Found the issue.");
+  });
+
+  it("exposes production layers without changing compiled text", () => {
+    const input = {
+      messages: [
+        userMsg("Fix login bug"),
+        assistantWithToolCall("Read", { path: "auth.ts" }),
+        assistantText("Found the issue."),
+      ],
+    };
+    const layered = compileWithLayers(input);
+    expect(layered.text).toBe(compile(input));
+    expect(layered.layers.map((layer) => layer.name)).toContain("Pi VCC Session Goal");
+    expect(layered.layers.map((layer) => layer.name)).toContain("Pi VCC Brief Transcript");
+    expect(layered.layers.at(-1)).toMatchObject({ name: "Pi VCC Recall Note", role: "recall" });
   });
 
   it("merges previous summary goals", () => {

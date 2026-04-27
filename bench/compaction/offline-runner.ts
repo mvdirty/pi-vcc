@@ -1,8 +1,7 @@
 import { performance } from "node:perf_hooks";
 import type { Message } from "@mariozechner/pi-ai";
-import { compile } from "../../src/core/summarize";
+import { compileWithLayers } from "../../src/core/summarize";
 import { buildSections } from "../../src/core/build-sections";
-import { RECALL_NOTE } from "../../src/core/format";
 import { normalize } from "../../src/core/normalize";
 import { renderMessage } from "../../src/core/render-entries";
 import { clip, textOf } from "../../src/core/content";
@@ -478,54 +477,21 @@ const makeLayeredCheckpoint = (messages: Message[]): LayerSnapshot[] => {
 const renderLayers = (layers: LayerSnapshot[]): string =>
   layers.map((layer) => `[${layer.name}]\n${layer.text}`).join("\n\n");
 
-const splitCurrentSections = (current: string): LayerSnapshot[] => {
-  const headers = [...current.matchAll(/^\[(.+?)\]/gm)];
-  if (headers.length === 0) return [{ name: "Pi VCC Current Sections", role: "current", text: current }];
-  return headers.map((header, index) => {
-    const start = header.index ?? 0;
-    const end = headers[index + 1]?.index ?? current.length;
-    const title = header[1];
-    return {
-      name: `Pi VCC ${title}`,
-      role: "current" as const,
-      text: current.slice(start, end).trimEnd(),
-    };
-  });
-};
-
-const splitPiVccSummary = (summary: string): LayerSnapshot[] => {
-  if (!summary.trim()) return [];
-  const parts = summary.split(SEPARATOR).map((part) => part.trim()).filter(Boolean);
-  if (parts.length === 0) return [{ name: "Pi VCC Current Sections", role: "current", text: summary }];
-
-  const layers: LayerSnapshot[] = [];
-  const last = parts[parts.length - 1];
-  const hasRecallNote = last === RECALL_NOTE;
-  const bodyParts = hasRecallNote ? parts.slice(0, -1) : parts;
-  const current = bodyParts[0] ?? "";
-  const history = bodyParts.slice(1).join(SEPARATOR);
-
-  if (current) layers.push(...splitCurrentSections(current));
-  if (history) layers.push({ name: "Pi VCC Brief Transcript", role: "history", text: history });
-  if (hasRecallNote) layers.push({ name: "Pi VCC Recall Note", role: "recall", text: RECALL_NOTE });
-  return layers.length > 0 ? layers : [{ name: "Pi VCC Current Sections", role: "current", text: summary }];
-};
-
 export const offlineCompactors: OfflineCompactor[] = [
   {
     name: "pi-vcc",
     compact: ({ messages, allMessages, previous }) => {
       const start = performance.now();
-      const summary = compile({ messages, previousSummary: previous?.activePromptState });
+      const summary = compileWithLayers({ messages, previousSummary: previous?.activePromptState });
       const elapsed = performance.now() - start;
       return {
-        activePromptState: summary,
-        layers: splitPiVccSummary(summary),
+        activePromptState: summary.text,
+        layers: summary.layers,
         recallCorpus: renderedDocuments(allMessages),
         stats: {
           compactionMs: elapsed,
           estimatedInputTokens: estimateTokens(sourceTextOf(messages)),
-          estimatedOutputTokens: estimateTokens(summary),
+          estimatedOutputTokens: estimateTokens(summary.text),
         },
       };
     },
