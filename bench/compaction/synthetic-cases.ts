@@ -252,6 +252,44 @@ export const syntheticCompactionCases: CompactionBenchmarkCase[] = [
     },
   },
   {
+    id: "cache-bust-evidence-growth",
+    description: "Stable work state remains unchanged while new evidence handles are discovered across compactions.",
+    messages: [
+      user("Audit cache probes. Stable objective: preserve prefix cache while tracking evidence handles. Always keep benchmark validation in Docker."),
+      assistant("Stable checkpoint: preserve prefix cache; validation preference Docker; canonical file src/cache/probe.ts."),
+      toolCall("read", { path: "src/cache/probe.ts" }),
+      toolResult("read", "export const cacheProbe = 'cache_probe_alpha';\n// request_id=req_cache_alpha"),
+      assistant("Evidence handles so far: src/cache/probe.ts and cache_probe_alpha."),
+      toolCall("bash", { command: "grep -R cache_probe_beta /tmp/cache-evidence-beta.log" }),
+      toolResult("bash", "CACHE_LAYER_SHIFT request_id=req_cache_beta\ntrace_id=trace_cache_beta\n/tmp/cache-evidence-beta.log"),
+      assistant("Additional evidence handle: /tmp/cache-evidence-beta.log with req_cache_beta."),
+      toolCall("bash", { command: "grep -R cache_probe_gamma /tmp/cache-evidence-gamma.log" }),
+      toolResult("bash", "CACHE_LAYER_STABLE request_id=req_cache_gamma\ntrace_id=trace_cache_gamma\n/tmp/cache-evidence-gamma.log"),
+      assistant("Additional evidence handle: /tmp/cache-evidence-gamma.log with req_cache_gamma."),
+    ],
+    compactionPoints: [5, 8, 11],
+    gold: {
+      activeTerms: [
+        { label: "stable objective", term: "preserve prefix cache" },
+        { label: "canonical file", term: "src/cache/probe.ts" },
+        { label: "validation preference", term: "Docker" },
+        { label: "latest evidence", term: "req_cache_gamma" },
+      ],
+      currentTerms: [
+        { label: "stable objective", term: "preserve prefix cache" },
+        { label: "canonical file", term: "src/cache/probe.ts" },
+        { label: "validation preference", term: "Docker" },
+        { label: "latest evidence", term: "req_cache_gamma" },
+      ],
+      recallTerms: [
+        { label: "earlier beta evidence", term: "CACHE_LAYER_SHIFT request_id=req_cache_beta", query: "CACHE_LAYER_SHIFT req_cache_beta" },
+      ],
+      continuationTerms: [
+        { label: "latest evidence", term: "req_cache_gamma" },
+      ],
+    },
+  },
+  {
     id: "cache-bust-volatile-next-step",
     description: "Stable objective and identifiers remain fixed while only volatile next-step state changes across cycles.",
     messages: [
