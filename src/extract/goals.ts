@@ -25,6 +25,8 @@ const NON_GOAL_RE =
 
 const TABLE_OR_STATUS_RE =
   /\b(READY\s+STATUS\s+RESTARTS|\d+\/\d+\s+(?:Running|Pending|Completed|Error|CrashLoopBackOff)\b)/;
+const CONFIG_FRAGMENT_RE = /^\s*(?:apiVersion|kind|metadata|labels|annotations|spec|data|creationTimestamp|name|namespace|app(?:\.kubernetes\.io\/[-\w]+)?|chart|grafana_dashboard|heritage|release|resourceVersion|uid)\s*:/i;
+const LOG_OR_COMMAND_RE = /^\s*(?:[❯$>]\s+|\{.*"(?:time|level|msg)"\s*:)/;
 
 // Signals that the rest of the user message is a command template (e.g. /issues),
 // in which case we should stop collecting goals at the signal line.
@@ -51,6 +53,8 @@ const isSubstantiveGoal = (text: string): boolean => {
   if (NOISE_SHORT_RE.test(t)) return false;
   if (VOLATILE_STATUS_RE.test(t)) return false;
   if (TABLE_OR_STATUS_RE.test(t)) return false;
+  if (CONFIG_FRAGMENT_RE.test(t)) return false;
+  if (LOG_OR_COMMAND_RE.test(t)) return false;
   if (NON_GOAL_RE.test(t)) return false;
   if (isPreferenceOnly(t)) return false;
   return true;

@@ -106,4 +106,20 @@ describe("extractGoals", () => {
     ]);
     expect(goals).toEqual(["Install kube-prometheus-stack"]);
   });
+
+  it("keeps pasted config fragments out of stable goals", () => {
+    const goals = extractGoals([
+      { kind: "user", text: "Fix dashboard provisioning" },
+      { kind: "user", text: "kind: ConfigMap\nmetadata:\ncreationTimestamp: \"2026-04-19T22:23:16Z\"\nlabels:\napp: grafana\napp.kubernetes.io/instance: monitoring\nchart: kubePrometheusStack-83.6.0\ngrafana_dashboard: \"1\"\nresourceVersion: \"21956\"\nuid: d27df580-8819-472e-90d4-0ac281b138f5" },
+    ]);
+    expect(goals).toEqual(["Fix dashboard provisioning"]);
+  });
+
+  it("keeps pasted commands and JSON logs out of stable goals", () => {
+    const goals = extractGoals([
+      { kind: "user", text: "Fix dashboard provisioning" },
+      { kind: "user", text: "❯ kubectl get cm monitoring-k8s-monitoring-cluster-total -oyaml\n{\"time\": \"2026-04-19T22:20:47Z\", \"msg\": \"Starting collector\", \"level\": \"INFO\"}" },
+    ]);
+    expect(goals).toEqual(["Fix dashboard provisioning"]);
+  });
 });
