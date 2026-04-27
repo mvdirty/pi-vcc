@@ -36,8 +36,12 @@ const sectionOf = (text: string, header: string): string => {
 /** Extract the brief transcript part (everything after ---) */
 const briefOf = (text: string): string => {
   const idx = text.indexOf(SEPARATOR);
-  if (idx < 0) return "";
-  return text.slice(idx + SEPARATOR.length).trim();
+  if (idx >= 0) return text.slice(idx + SEPARATOR.length).trim();
+  // A fresh compaction can contain only brief transcript with no header section,
+  // in which case there is no separator to split on.
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  return HEADER_NAMES.some((header) => trimmed.startsWith(`[${header}]`)) ? "" : trimmed;
 };
 
 /** Merge a header section */
@@ -79,8 +83,8 @@ const mergeFileLines = (prev: string, fresh: string): string => {
         const prefix = `- ${cat}: `;
         if (!line.startsWith(prefix)) continue;
         let rest = line.slice(prefix.length);
-        // Strip "(+N more)" suffix
-        rest = rest.replace(/\s*\(\+\d+ more\)\s*$/, "");
+        // Strip overflow suffixes
+        rest = rest.replace(/\s*\(\+(?:\d+\s+)?more\)\s*$/, "");
         for (const p of rest.split(",")) {
           const trimmed = p.trim();
           if (trimmed) merged[cat].add(trimmed);
@@ -95,7 +99,7 @@ const mergeFileLines = (prev: string, fresh: string): string => {
   const cap = (set: Set<string>, limit: number) => {
     const arr = [...set];
     if (arr.length <= limit) return arr.join(", ");
-    return arr.slice(0, limit).join(", ") + ` (+${arr.length - limit} more)`;
+    return arr.slice(0, limit).join(", ") + " (+more)";
   };
 
   const lines: string[] = [];

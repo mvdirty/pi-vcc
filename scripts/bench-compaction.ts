@@ -18,6 +18,8 @@ const hasFlag = (name: string): boolean => args.includes(name);
 const realSessionsDir = argValue("--real-sessions-dir");
 const realLimitRaw = argValue("--real-limit");
 const realLimit = realLimitRaw ? Number.parseInt(realLimitRaw, 10) : undefined;
+const caseFilter = argValue("--case-filter");
+const includeDiagnostics = hasFlag("--show-layer-diff");
 
 const selected = argValue("--compactors")
   ?.split(",")
@@ -40,8 +42,11 @@ const cases = hasFlag("--real-only") ? [] : [...syntheticCompactionCases];
 if (realSessionsDir) {
   cases.push(...await loadRealSessionCases({ sessionsDir: realSessionsDir, limit: realLimit }));
 }
+const filteredCases = caseFilter
+  ? cases.filter((testCase) => testCase.id.includes(caseFilter) || testCase.description.includes(caseFilter))
+  : cases;
 
-const result = runOfflineCompactionBenchmark({ compactors, cases });
+const result = runOfflineCompactionBenchmark({ compactors, cases: filteredCases, includeDiagnostics });
 const failures = result.cycles
   .map((cycle) => ({ cycle, gates: failedGatesOf(cycle) }))
   .filter((entry) => entry.gates.length > 0);

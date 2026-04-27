@@ -69,6 +69,14 @@ export interface RecallProbeResult extends TermProbeResult {
   topHitIds: string[];
 }
 
+export interface PromptLayerDiff {
+  layer: string;
+  previousPreview: string;
+  currentPreview: string;
+  addedLines: string[];
+  removedLines: string[];
+}
+
 export interface CycleMetrics {
   caseId: string;
   compactor: string;
@@ -106,6 +114,7 @@ export interface CycleMetrics {
   layerSizes: Record<string, number>;
   promptLayerSizes: Record<string, number>;
   promptLayerTokenDeltas: Record<string, number>;
+  promptLayerDiffs?: PromptLayerDiff[];
 }
 
 export interface BenchmarkRunResult {
@@ -217,6 +226,34 @@ const summarizeChangedPromptLayers = (
     changedPromptLayers,
     promptLayerTokenDeltas,
   };
+};
+
+const linePreview = (text: string, maxChars = 400): string =>
+  text.length <= maxChars ? text : `${text.slice(0, maxChars)}...(truncated)`;
+
+const changedPromptLayerDiffs = (
+  previous: PromptSnapshot | undefined,
+  current: PromptSnapshot,
+  changedLayers: string[],
+): PromptLayerDiff[] => {
+  if (!previous) return [];
+  const prevByName = new Map(previous.layers.map((layer) => [layer.name, layer.text]));
+  const currentByName = new Map(current.layers.map((layer) => [layer.name, layer.text]));
+  return changedLayers.slice(0, 3).map((layer) => {
+    const previousText = prevByName.get(layer) ?? "";
+    const currentText = currentByName.get(layer) ?? "";
+    const previousLines = previousText.split("\n").map((line) => line.trim()).filter(Boolean);
+    const currentLines = currentText.split("\n").map((line) => line.trim()).filter(Boolean);
+    const previousSet = new Set(previousLines);
+    const currentSet = new Set(currentLines);
+    return {
+      layer,
+      previousPreview: linePreview(previousText),
+      currentPreview: linePreview(currentText),
+      addedLines: currentLines.filter((line) => !previousSet.has(line)).slice(0, 12),
+      removedLines: previousLines.filter((line) => !currentSet.has(line)).slice(0, 12),
+    };
+  });
 };
 
 const termProbe = (terms: ExpectedTerm[] = [], sourceText: string, targetText: string): TermProbeResult[] =>
@@ -570,6 +607,7 @@ const cycleMetrics = (
   previous: CompactorResult | undefined,
   prompt: PromptSnapshot,
   previousPrompt: PromptSnapshot | undefined,
+  includeDiagnostics: boolean,
 ): CycleMetrics => {
   const sourceText = sourceTextOf(sourceMessages);
   const activeText = result.activePromptState;
@@ -631,6 +669,9 @@ const cycleMetrics = (
     layerSizes: Object.fromEntries(result.layers.map((layer) => [layer.name, layer.text.length])),
     promptLayerSizes: Object.fromEntries(prompt.layers.map((layer) => [layer.name, layer.text.length])),
     promptLayerTokenDeltas: promptChanged.promptLayerTokenDeltas,
+    ...(includeDiagnostics && promptChanged.changedPromptLayers.length > 0
+      ? { promptLayerDiffs: changedPromptLayerDiffs(previousPrompt, prompt, promptChanged.changedPromptLayers) }
+      : {}),
   };
 };
 
@@ -691,6 +732,7 @@ export const failedGatesOf = (cycle: CycleMetrics): string[] => {
 export const runOfflineCompactionBenchmark = (options: {
   cases?: CompactionBenchmarkCase[];
   compactors?: OfflineCompactor[];
+  includeDiagnostics?: boolean;
 } = {}): BenchmarkRunResult => {
   const cases = options.cases ?? syntheticCompactionCases;
   const compactors = options.compactors ?? offlineCompactors;
@@ -711,7 +753,7 @@ export const runOfflineCompactionBenchmark = (options: {
           cycle: index + 1,
         });
         const prompt = simulatedPromptOf(result, sourceMessages);
-        cycles.push(cycleMetrics(testCase, compactor, index + 1, point, sourceMessages, result, previous, prompt, previousPrompt));
+        cycles.push(cycleMetrics(testCase, compactor, index + 1, point, sourceMessages, result, previous, prompt, previousPrompt, Boolean(options.includeDiagnostics)));
         previous = result;
         previousPrompt = prompt;
         previousPoint = point;

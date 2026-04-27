@@ -161,6 +161,18 @@ bun scripts/bench-compaction.ts \
   --jsonl
 ```
 
+Filter cases and include concise layer diffs when investigating cache churn:
+
+```bash
+bun scripts/bench-compaction.ts \
+  --real-only \
+  --real-sessions-dir ~/.pi/agent/sessions \
+  --case-filter ch-observability \
+  --compactors pi-vcc \
+  --show-layer-diff \
+  --jsonl
+```
+
 Run the same checks in Docker:
 
 ```bash

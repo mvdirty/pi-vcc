@@ -223,6 +223,35 @@ export const syntheticCompactionCases: CompactionBenchmarkCase[] = [
     },
   },
   {
+    id: "realistic-scope-and-status",
+    description: "A real-session-shaped scope extension should be captured, but follow-up status should stay volatile.",
+    messages: [
+      user("Build a local ClickHouse-based OpenTelemetry ingestion and query system."),
+      assistant("I will start with local ClickHouse, ingestion, and query scaffolding."),
+      user("Good, now lets add meta monitoring for the chart itself. This means metrics for our clickhouse instance and dashboards for grafana."),
+      assistant("I will extend the current work with meta monitoring and Grafana dashboards."),
+      user("Status update: meta monitoring wiring is started; next validate dashboard provisioning."),
+      assistant("Next step: validate dashboard provisioning without changing the stable objective."),
+    ],
+    compactionPoints: [2, 4, 6],
+    gold: {
+      activeTerms: [
+        { label: "original objective", term: "OpenTelemetry ingestion and query system" },
+        { label: "scope extension", term: "meta monitoring" },
+      ],
+      currentTerms: [
+        { label: "original objective", term: "OpenTelemetry ingestion and query system" },
+        { label: "scope extension", term: "meta monitoring" },
+      ],
+      recallTerms: [
+        { label: "dashboard validation", term: "dashboard provisioning", query: "dashboard provisioning" },
+      ],
+      continuationTerms: [
+        { label: "volatile next step", term: "validate dashboard provisioning" },
+      ],
+    },
+  },
+  {
     id: "cache-bust-volatile-next-step",
     description: "Stable objective and identifiers remain fixed while only volatile next-step state changes across cycles.",
     messages: [

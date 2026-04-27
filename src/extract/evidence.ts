@@ -7,11 +7,11 @@ export interface EvidenceActivity {
   errorSignatures: Set<string>;
 }
 
-const PATH_RE = /(?:^|[\s"'`(=])((?:\.?\/?[\w.-]+\/)+[\w.-]+(?:\.[\w.-]+)?)/g;
 const ABS_PATH_RE = /(?:^|[\s"'`(=])(\/(?:tmp|var|home|workspace|app|repo|src|tests?)\/[\w./-]+)/g;
-const ERROR_SIGNATURE_RE = /\b(?:ERR_[A-Z0-9_]+|[A-Z][A-Z0-9]+(?:_[A-Z0-9]+){1,})\b/g;
+const PROJECT_PATH_RE = /(?:^|[\s"'`(=])((?:src|test|tests|scripts|bench)\/[\w./-]+)/g;
+const ERROR_SIGNATURE_RE = /\b(?:ERR_[A-Z0-9_]+|(?:CACHE|CRITICAL|FATAL|PANIC|ERROR|FAIL)[A-Z0-9_]*(?:_[A-Z0-9]+)+)\b/g;
 const ID_RE = /\b(?:cache|probe|span|spn|req|request|trace|artifact|bench)[A-Za-z0-9_-]*_[A-Za-z0-9_-]+\b/g;
-const COMMIT_RE = /\b[0-9a-f]{7,40}\b/g;
+const COMMIT_RE = /\bcommit(?:\s+|[=:])([0-9a-f]{7,40})\b/gi;
 
 const addMatches = (set: Set<string>, text: string, regex: RegExp, group = 0) => {
   for (const match of text.matchAll(regex)) {
@@ -27,10 +27,10 @@ const textFromBlock = (block: NormalizedBlock): string => {
 
 const addEvidenceFromText = (activity: EvidenceActivity, text: string) => {
   addMatches(activity.paths, text, ABS_PATH_RE, 1);
-  addMatches(activity.paths, text, PATH_RE, 1);
+  addMatches(activity.paths, text, PROJECT_PATH_RE, 1);
   addMatches(activity.errorSignatures, text, ERROR_SIGNATURE_RE);
   addMatches(activity.identifiers, text, ID_RE);
-  addMatches(activity.identifiers, text, COMMIT_RE);
+  addMatches(activity.identifiers, text, COMMIT_RE, 1);
 };
 
 export const extractEvidence = (blocks: NormalizedBlock[]): EvidenceActivity => {
@@ -58,9 +58,9 @@ export const extractEvidence = (blocks: NormalizedBlock[]): EvidenceActivity => 
 };
 
 const cap = (set: Set<string>, limit: number): string => {
-  const values = [...set].sort();
+  const values = [...set];
   if (values.length <= limit) return values.join(", ");
-  return `${values.slice(0, limit).join(", ")} (+${values.length - limit} more)`;
+  return `${values.slice(0, limit).join(", ")} (+more)`;
 };
 
 export const formatEvidence = (activity: EvidenceActivity): string[] => {

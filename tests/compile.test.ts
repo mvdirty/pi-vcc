@@ -89,4 +89,17 @@ describe("compile", () => {
     expect(current).toContain("npm test");
     expect(current).not.toContain("prefer yarn test");
   });
+
+  it("preserves fresh brief-only updates when merging previous summary", () => {
+    const previousSummary = "[Session Goal]\n- Existing goal\n\n---\n\n[user]\nExisting goal";
+    const r = compile({
+      previousSummary,
+      messages: [
+        userMsg("Status update: wiring is started; next validate dashboard provisioning."),
+        assistantText("Next step: validate dashboard provisioning without changing the stable objective."),
+      ],
+    });
+    expect(r).toContain("Existing goal");
+    expect(r).toContain("validate dashboard provisioning");
+  });
 });
