@@ -3,8 +3,16 @@ import type { FileOps } from "../types";
 import { normalize } from "./normalize";
 import { filterNoise } from "./filter-noise";
 import { buildSections } from "./build-sections";
-import { formatSummary, capBrief, RECALL_NOTE } from "./format";
+import { capBrief, RECALL_NOTE } from "./format";
 import { applyPreferenceCorrections } from "../extract/preferences";
+import {
+  buildCompactionState,
+  CURRENT_SECTION_ORDER,
+  renderCompactionState,
+  type CompiledLayerRole,
+  type CompiledSummaryLayer,
+  type CompileWithLayersResult,
+} from "./compaction-state";
 
 export interface CompileInput {
   messages: Message[];
@@ -12,20 +20,9 @@ export interface CompileInput {
   fileOps?: FileOps;
 }
 
-export type CompiledLayerRole = "current" | "history" | "recall";
+export type { CompiledLayerRole, CompiledSummaryLayer, CompileWithLayersResult } from "./compaction-state";
 
-export interface CompiledSummaryLayer {
-  name: string;
-  role: CompiledLayerRole;
-  text: string;
-}
-
-export interface CompileWithLayersResult {
-  text: string;
-  layers: CompiledSummaryLayer[];
-}
-
-const HEADER_NAMES = ["Session Goal", "Current Scope", "Files And Changes", "Commits", "Evidence Handles", "User Preferences", "Outstanding Context"];
+const HEADER_NAMES = [...CURRENT_SECTION_ORDER];
 
 const SEPARATOR = "\n\n---\n\n";
 
@@ -210,7 +207,7 @@ export const compile = (input: CompileInput): string => compileWithLayers(input)
 export const compileWithLayers = (input: CompileInput): CompileWithLayersResult => {
   const blocks = filterNoise(normalize(input.messages));
   const data = buildSections({ blocks });
-  const fresh = formatSummary(data);
+  const fresh = renderCompactionState(buildCompactionState(data)).text;
   // Strip any legacy RECALL_NOTE baked into prev summary (pre-fix format)
   // so merge doesn't re-stack it inside the brief.
   const prev = input.previousSummary
