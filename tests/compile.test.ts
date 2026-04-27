@@ -102,4 +102,25 @@ describe("compile", () => {
     expect(r).toContain("Existing goal");
     expect(r).toContain("validate dashboard provisioning");
   });
+
+  it("demotes fresh goals to current scope when merging previous summary", () => {
+    const previousSummary = "[Session Goal]\n- Existing goal\n\n---\n\n[user]\nExisting goal";
+    const r = compile({
+      previousSummary,
+      messages: [userMsg("Also add meta monitoring dashboards")],
+    });
+    const current = r.split("\n\n---\n\n")[0];
+    expect(current).toContain("[Session Goal]\n- Existing goal");
+    expect(current).toContain("[Current Scope]\n- Also add meta monitoring dashboards");
+  });
+
+  it("keeps prior current scope when fresh window is status-only", () => {
+    const previousSummary = "[Session Goal]\n- Existing goal\n\n[Current Scope]\n- Add meta monitoring\n\n---\n\n[user]\nExisting goal";
+    const r = compile({
+      previousSummary,
+      messages: [userMsg("Status update: validate dashboard provisioning next")],
+    });
+    const current = r.split("\n\n---\n\n")[0];
+    expect(current).toContain("[Current Scope]\n- Add meta monitoring");
+  });
 });

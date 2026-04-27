@@ -90,4 +90,20 @@ describe("extractGoals", () => {
       "Benchmark cache-aware compaction. Stable objective: preserve Layer 0 and Layer 1 prefixes.",
     ]);
   });
+
+  it("keeps pasted kubernetes status tables out of stable goals", () => {
+    const goals = extractGoals([
+      { kind: "user", text: "Fix chart naming" },
+      { kind: "user", text: "NAME READY STATUS RESTARTS AGE\ngrafana-db-1 1/1 Running 0 101m" },
+    ]);
+    expect(goals).toEqual(["Fix chart naming"]);
+  });
+
+  it("keeps direct preference instructions out of stable goals", () => {
+    const goals = extractGoals([
+      { kind: "user", text: "Install kube-prometheus-stack" },
+      { kind: "user", text: "I hate verbose naming; please use the name fix thing they provide" },
+    ]);
+    expect(goals).toEqual(["Install kube-prometheus-stack"]);
+  });
 });

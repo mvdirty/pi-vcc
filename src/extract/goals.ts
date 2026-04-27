@@ -10,6 +10,7 @@ const TASK_RE =
 
 const PREFERENCE_RE =
   /\b(prefer(?:s|red|ring)?|always use|never use|please use|please avoid|do not use|don'?t use)\b/i;
+const DIRECT_PREFERENCE_RE = /\b(?:prefer(?:s|red|ring)?|please use|please avoid|always use|never use)\b/i;
 const PREFERENCE_WITH_TASK_RE =
   /\b(fix|implement|add|create|build|refactor|debug|investigate|update|remove|delete|migrate|deploy|write|set up)\b/i;
 
@@ -21,6 +22,9 @@ const VOLATILE_STATUS_RE = /^\s*(?:current blocker|blocker update|status update|
 // followed by numbered "Read the issue in full..." steps).
 const NON_GOAL_RE =
   /^\s*[\[│├└─╭╰]|```|^\s*(=[A-Z]+\(|function |const |let |var |import |export |class )|^(https?:|file:|\/[A-Za-z])|\\n|^\s*For each\b|\bin full\b[^\n]*\b(comments|issue|issues|PRs?|linked)\b/;
+
+const TABLE_OR_STATUS_RE =
+  /\b(READY\s+STATUS\s+RESTARTS|\d+\/\d+\s+(?:Running|Pending|Completed|Error|CrashLoopBackOff)\b)/;
 
 // Signals that the rest of the user message is a command template (e.g. /issues),
 // in which case we should stop collecting goals at the signal line.
@@ -38,7 +42,7 @@ const stripLeadingBullet = (line: string): string =>
 const MAX_GOAL_CHARS = 200;
 
 const isPreferenceOnly = (text: string): boolean =>
-  PREFERENCE_RE.test(text) && !PREFERENCE_WITH_TASK_RE.test(text);
+  DIRECT_PREFERENCE_RE.test(text) || (PREFERENCE_RE.test(text) && !PREFERENCE_WITH_TASK_RE.test(text));
 
 const isSubstantiveGoal = (text: string): boolean => {
   const t = text.trim();
@@ -46,6 +50,7 @@ const isSubstantiveGoal = (text: string): boolean => {
   if (t.length > MAX_GOAL_CHARS) return false;
   if (NOISE_SHORT_RE.test(t)) return false;
   if (VOLATILE_STATUS_RE.test(t)) return false;
+  if (TABLE_OR_STATUS_RE.test(t)) return false;
   if (NON_GOAL_RE.test(t)) return false;
   if (isPreferenceOnly(t)) return false;
   return true;

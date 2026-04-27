@@ -46,8 +46,11 @@ const briefOf = (text: string): string => {
 
 /** Merge a header section */
 const mergeHeaderSection = (header: string, prev: string, fresh: string): string => {
-  // Volatile sections -- always use fresh only
-  if (header === "Outstanding Context" || header === "Current Scope") return fresh;
+  // Current Scope is the latest explicit scope change; keep previous when the
+  // fresh window only has status/transcript updates.
+  if (header === "Current Scope") return fresh || prev;
+  // Outstanding Context is volatile -- always use fresh only.
+  if (header === "Outstanding Context") return fresh;
   if (!prev) return fresh;
   if (!fresh) return prev;
 
@@ -116,11 +119,33 @@ const mergeBriefTranscript = (prev: string, fresh: string): string => {
   return prev + "\n\n" + fresh;
 };
 
+const demoteFreshGoalToScope = (fresh: string): string => {
+  const goal = sectionOf(fresh, "Session Goal");
+  if (!goal) return fresh;
+
+  const goalLines = goal.split("\n").slice(1).filter((line) => line.startsWith("- "));
+  const withoutGoal = fresh
+    .replace(goal, "")
+    .replace(/^\s+/, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (goalLines.length === 0) return withoutGoal;
+
+  const currentScope = sectionOf(withoutGoal, "Current Scope");
+  if (currentScope) {
+    return withoutGoal.replace(currentScope, `${currentScope}\n${goalLines.join("\n")}`);
+  }
+
+  const scopeSection = `[Current Scope]\n${goalLines.join("\n")}`;
+  return withoutGoal ? `${scopeSection}\n\n${withoutGoal}` : scopeSection;
+};
+
 const mergePrevious = (prev: string, fresh: string): string => {
+  const mergeFresh = demoteFreshGoalToScope(fresh);
   // Merge header sections
   const headers = HEADER_NAMES
     .map((header) => {
-      const freshSec = sectionOf(fresh, header);
+      const freshSec = sectionOf(mergeFresh, header);
       const prevSec = sectionOf(prev, header);
       return mergeHeaderSection(header, prevSec, freshSec);
     })
@@ -128,7 +153,7 @@ const mergePrevious = (prev: string, fresh: string): string => {
 
   // Merge brief transcript
   const prevBrief = briefOf(prev);
-  const freshBrief = briefOf(fresh);
+  const freshBrief = briefOf(mergeFresh);
   const mergedBrief = mergeBriefTranscript(prevBrief, freshBrief);
 
   const parts: string[] = [];
