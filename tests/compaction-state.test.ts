@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildCompactionState, renderCompactionState } from "../src/core/compaction-state";
+import { buildCompactionState, parseCompactionState, renderCompactionState } from "../src/core/compaction-state";
 import type { SectionData } from "../src/sections";
 
 const sectionData = (overrides: Partial<SectionData> = {}): SectionData => ({
@@ -55,5 +55,18 @@ describe("compaction state", () => {
     const rendered = renderCompactionState(buildCompactionState(sectionData()), { includeRecallNote: true });
     expect(rendered.text).toBe("");
     expect(rendered.layers).toEqual([]);
+  });
+
+  it("parses rendered summary back into structured state", () => {
+    const rendered = renderCompactionState(buildCompactionState(sectionData({
+      sessionGoal: ["Benchmark compaction"],
+      currentScope: ["Expose production layers"],
+      userPreferences: ["Use Docker for benchmarks"],
+      briefTranscript: "[user]\nBenchmark compaction",
+    })));
+
+    const reparsed = renderCompactionState(parseCompactionState(rendered.text));
+    expect(reparsed.text).toBe(rendered.text);
+    expect(reparsed.layers.map((layer) => layer.name)).toEqual(rendered.layers.map((layer) => layer.name));
   });
 });

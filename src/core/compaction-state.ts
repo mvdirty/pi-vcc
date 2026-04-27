@@ -90,6 +90,43 @@ export const renderCurrentSections = (state: CompactionState): CompiledSummaryLa
       text: entry.text,
     }));
 
+const emptyCurrent = (): CompactionState["current"] => ({
+  sessionGoal: [],
+  currentScope: [],
+  filesAndChanges: [],
+  commits: [],
+  evidenceHandles: [],
+  userPreferences: [],
+  outstandingContext: [],
+});
+
+const parseSectionItems = (text: string): string[] =>
+  text.split("\n").slice(1).map((line) => line.replace(/^-\s*/, "").trim()).filter(Boolean);
+
+export const parseCompactionState = (summary: string): CompactionState => {
+  const parts = summary.split("\n\n---\n\n").map((part) => part.trim()).filter(Boolean);
+  const last = parts[parts.length - 1];
+  const bodyParts = last === RECALL_NOTE ? parts.slice(0, -1) : parts;
+  const currentText = bodyParts[0] ?? "";
+  const historyText = bodyParts.slice(1).join("\n\n---\n\n");
+  const current = emptyCurrent();
+
+  const headers = [...currentText.matchAll(/^\[(.+?)\]/gm)];
+  for (const [index, header] of headers.entries()) {
+    const title = header[1] as CurrentSectionName;
+    if (!CURRENT_SECTION_ORDER.includes(title)) continue;
+    const start = header.index ?? 0;
+    const end = headers[index + 1]?.index ?? currentText.length;
+    current[stateKeyOf(title)] = parseSectionItems(currentText.slice(start, end).trim());
+  }
+
+  return {
+    current,
+    history: { briefTranscript: historyText },
+    recall: { note: RECALL_NOTE },
+  };
+};
+
 export const renderCompactionState = (
   state: CompactionState,
   options: { includeRecallNote?: boolean } = {},
