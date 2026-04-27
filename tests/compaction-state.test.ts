@@ -27,12 +27,12 @@ describe("compaction state", () => {
     const rendered = renderCompactionState(state);
     expect(rendered.layers.map((layer) => layer.name)).toEqual([
       "Pi VCC Session Goal",
-      "Pi VCC Current Scope",
       "Pi VCC Files And Changes",
       "Pi VCC User Preferences",
+      "Pi VCC Current Scope",
     ]);
-    expect(rendered.text.indexOf("[Session Goal]")).toBeLessThan(rendered.text.indexOf("[Current Scope]"));
-    expect(rendered.text.indexOf("[Current Scope]")).toBeLessThan(rendered.text.indexOf("[Files And Changes]"));
+    expect(rendered.text.indexOf("[Session Goal]")).toBeLessThan(rendered.text.indexOf("[Files And Changes]"));
+    expect(rendered.text.indexOf("[User Preferences]")).toBeLessThan(rendered.text.indexOf("[Current Scope]"));
   });
 
   it("keeps history and recall in separate trailing layers", () => {

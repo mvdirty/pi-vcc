@@ -34,11 +34,11 @@ export interface CompactionState {
 
 export const CURRENT_SECTION_ORDER = [
   "Session Goal",
-  "Current Scope",
   "Files And Changes",
   "Commits",
   "Evidence Handles",
   "User Preferences",
+  "Current Scope",
   "Outstanding Context",
 ] as const;
 
