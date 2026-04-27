@@ -38,7 +38,33 @@ export const extractPreferences = (blocks: NormalizedBlock[]): string[] => {
     }
   }
 
-  return prefs.slice(0, 10);
+  return applyPreferenceCorrections(prefs).slice(0, 10);
+};
+
+const NEVER_USE_RE = /\bnever use\s+([\w.-]+)/i;
+const POSITIVE_PREF_RE = /\b(?:prefer|always use|please use|use)\b/i;
+
+export const applyPreferenceCorrections = (prefs: string[]): string[] => {
+  const corrected: string[] = [];
+
+  for (const pref of prefs) {
+    const neverUse = pref.match(NEVER_USE_RE)?.[1]?.toLowerCase();
+    if (neverUse) {
+      for (let i = corrected.length - 1; i >= 0; i--) {
+        const existing = corrected[i].toLowerCase();
+        if (
+          existing.includes(neverUse) &&
+          POSITIVE_PREF_RE.test(existing) &&
+          !/\bnever\b|\bdo not\b|\bdon't\b/.test(existing)
+        ) {
+          corrected.splice(i, 1);
+        }
+      }
+    }
+    corrected.push(pref);
+  }
+
+  return corrected;
 };
 
 /**

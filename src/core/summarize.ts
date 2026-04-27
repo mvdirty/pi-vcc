@@ -4,6 +4,7 @@ import { normalize } from "./normalize";
 import { filterNoise } from "./filter-noise";
 import { buildSections } from "./build-sections";
 import { formatSummary, capBrief, RECALL_NOTE } from "./format";
+import { applyPreferenceCorrections } from "../extract/preferences";
 
 export interface CompileInput {
   messages: Message[];
@@ -11,7 +12,7 @@ export interface CompileInput {
   fileOps?: FileOps;
 }
 
-const HEADER_NAMES = ["Session Goal", "Files And Changes", "Commits", "Outstanding Context", "User Preferences"];
+const HEADER_NAMES = ["Session Goal", "Files And Changes", "Commits", "Evidence Handles", "Outstanding Context", "User Preferences"];
 
 const SEPARATOR = "\n\n---\n\n";
 
@@ -51,12 +52,15 @@ const mergeHeaderSection = (header: string, prev: string, fresh: string): string
     return mergeFileLines(prev, fresh);
   }
 
-  // Session Goal, User Preferences: line-level dedup, cap
+  // Sticky list sections: line-level dedup, cap
   const isClean = (l: string) => l.startsWith("- ") && !l.includes("<skill") && !l.includes("</skill");
   const prevLines = prev.split("\n").filter(isClean);
   const freshLines = fresh.split("\n").filter(isClean);
-  const combined = [...new Set([...prevLines, ...freshLines])];
-  const CAP = header === "Session Goal" ? 8 : header === "Commits" ? 8 : 15;
+  const combinedRaw = [...new Set([...prevLines, ...freshLines])];
+  const combined = header === "User Preferences"
+    ? applyPreferenceCorrections(combinedRaw.map((line) => line.replace(/^-\s*/, ""))).map((line) => `- ${line}`)
+    : combinedRaw;
+  const CAP = header === "Session Goal" ? 8 : header === "Commits" ? 8 : header === "Evidence Handles" ? 20 : 15;
   const capped = combined.length > CAP ? combined.slice(-CAP) : combined;
   if (capped.length === 0) return "";
   return `[${header}]\n${capped.join("\n")}`;

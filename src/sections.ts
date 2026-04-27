@@ -5,6 +5,7 @@ export interface SectionData {
   outstandingContext: string[];
   filesAndChanges: string[];
   commits: string[];
+  evidenceHandles: string[];
   userPreferences: string[];
   briefTranscript: string;
   /** Structured transcript entries (verbose object format) */

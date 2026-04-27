@@ -1,10 +1,12 @@
 import type { NormalizedBlock } from "../types";
-import { clip, clipSentence, firstLine, nonEmptyLines } from "./content";
+import { clip, clipSentence, nonEmptyLines } from "./content";
+import { summarizeToolResultForPrompt } from "./tool-result-summary";
 import type { SectionData } from "../sections";
 import { extractGoals } from "../extract/goals";
 import { extractFiles } from "../extract/files";
 import { extractPreferences, dedupPreferencesAgainstGoals } from "../extract/preferences";
 import { extractCommits, formatCommits } from "../extract/commits";
+import { extractEvidence, formatEvidence } from "../extract/evidence";
 import { buildBriefSections, sectionsToTranscript, stringifyBrief } from "./brief";
 
 export interface BuildSectionsInput {
@@ -20,7 +22,7 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
 
   for (const b of tail) {
     if (b.kind === "tool_result" && b.isError) {
-      items.push(`[${b.name}] ${firstLine(b.text, 150)}`);
+      items.push(`[${b.name}] ${summarizeToolResultForPrompt(b.text)}`);
       continue;
     }
 
@@ -72,6 +74,7 @@ export const buildSections = (input: BuildSectionsInput): SectionData => {
     outstandingContext: extractOutstandingContext(blocks),
     filesAndChanges: formatFileActivity(blocks),
     commits: formatCommits(extractCommits(blocks)),
+    evidenceHandles: formatEvidence(extractEvidence(blocks)),
     userPreferences,
     briefTranscript: stringifyBrief(briefSections),
     transcriptEntries: sectionsToTranscript(briefSections),

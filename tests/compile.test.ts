@@ -77,4 +77,16 @@ describe("compile", () => {
     expect(r).toContain("earlier lines omitted");
     expect(r).toContain("latest");
   });
+
+  it("supersedes stale positive preferences after explicit correction", () => {
+    const previousSummary = "[User Preferences]\n- For this repo, prefer yarn test when validating.\n\n---\n\n[user]\nold";
+    const r = compile({
+      previousSummary,
+      messages: [userMsg("Correction: never use yarn here. Use npm test for broad validation and node --test for focused checks.")],
+    });
+    const current = r.split("\n\n---\n\n")[0];
+    expect(current).toContain("never use yarn");
+    expect(current).toContain("npm test");
+    expect(current).not.toContain("prefer yarn test");
+  });
 });

@@ -7,6 +7,7 @@ const empty: SectionData = {
   outstandingContext: [],
   filesAndChanges: [],
   commits: [],
+  evidenceHandles: [],
   userPreferences: [],
   briefTranscript: "",
   transcriptEntries: [],
