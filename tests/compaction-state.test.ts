@@ -57,6 +57,22 @@ describe("compaction state", () => {
     expect(rendered.layers).toEqual([]);
   });
 
+  it("renders recent evidence after current scope", () => {
+    const state = buildCompactionState(sectionData({
+      sessionGoal: ["Benchmark compaction"],
+      evidenceHandles: ["Paths: src/cache/probe.ts"],
+      currentScope: ["Keep going"],
+    }));
+    state.current.recentEvidenceHandles = ["Identifiers: req_cache_beta"];
+    const rendered = renderCompactionState(state);
+    expect(rendered.layers.map((layer) => layer.name)).toEqual([
+      "Pi VCC Session Goal",
+      "Pi VCC Evidence Handles",
+      "Pi VCC Current Scope",
+      "Pi VCC Recent Evidence Handles",
+    ]);
+  });
+
   it("parses rendered summary back into structured state", () => {
     const rendered = renderCompactionState(buildCompactionState(sectionData({
       sessionGoal: ["Benchmark compaction"],

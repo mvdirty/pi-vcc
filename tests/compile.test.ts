@@ -138,4 +138,27 @@ describe("compile", () => {
     const current = r.split("\n\n---\n\n")[0];
     expect(current).toContain("[Current Scope]\n- Add meta monitoring");
   });
+
+  it("preserves evidence handles when merging", () => {
+    const previousSummary = "[Session Goal]\n- Existing goal\n\n[Evidence Handles]\n- Paths: src/cache/probe.ts\n- Identifiers: req_cache_beta\n\n---\n\n[user]\nExisting goal";
+    const r = compile({
+      previousSummary,
+      messages: [userMsg("Status update: continue validation")],
+    });
+    const current = r.split("\n\n---\n\n")[0];
+    expect(current).toContain("[Evidence Handles]\n- Paths: src/cache/probe.ts\n- Identifiers: req_cache_beta");
+  });
+
+  it("places newly discovered evidence in a later recent section", () => {
+    const previousSummary = "[Session Goal]\n- Existing goal\n\n[Evidence Handles]\n- Paths: src/cache/probe.ts\n\n---\n\n[user]\nExisting goal";
+    const r = compile({
+      previousSummary,
+      messages: [toolResult("bash", "CACHE_LAYER_SHIFT request_id=req_cache_beta /tmp/cache-evidence-beta.log")],
+    });
+    const current = r.split("\n\n---\n\n")[0];
+    expect(current).toContain("[Evidence Handles]\n- Paths: src/cache/probe.ts");
+    expect(current).toContain("[Recent Evidence Handles]");
+    expect(current).toContain("req_cache_beta");
+    expect(current.indexOf("[Evidence Handles]")).toBeLessThan(current.indexOf("[Recent Evidence Handles]"));
+  });
 });

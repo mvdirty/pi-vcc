@@ -23,7 +23,7 @@ export interface CompileInput {
 
 export type { CompiledLayerRole, CompiledSummaryLayer, CompileWithLayersResult } from "./compaction-state";
 
-const HEADER_NAMES = [...CURRENT_SECTION_ORDER];
+const HEADER_NAMES = ["Evidence Handles", "Recent Evidence Handles", ...CURRENT_SECTION_ORDER];
 
 const SEPARATOR = "\n\n---\n\n";
 
@@ -57,6 +57,7 @@ const briefOf = (text: string): string => {
 
 /** Merge a header section */
 const mergeHeaderSection = (header: string, prev: string, fresh: string): string => {
+  if (header === "Evidence Handles") return prev || fresh;
   // Current Scope is the latest explicit scope change; keep previous when the
   // fresh window only has status/transcript updates.
   if (header === "Current Scope") return fresh || prev;
@@ -124,6 +125,16 @@ const mergeFileLines = (prev: string, fresh: string): string => {
   return `[Files And Changes]\n${lines.join("\n")}`;
 };
 
+const evidenceItemsOf = (section: string): string[] =>
+  section.split("\n").filter((line) => line.startsWith("- "));
+
+const freshRecentEvidenceSection = (prevEvidence: string, freshEvidence: string): string => {
+  if (!prevEvidence || !freshEvidence) return "";
+  const previous = new Set(evidenceItemsOf(prevEvidence));
+  const freshOnly = evidenceItemsOf(freshEvidence).filter((line) => !previous.has(line));
+  return freshOnly.length > 0 ? `[Recent Evidence Handles]\n${freshOnly.join("\n")}` : "";
+};
+
 const mergeBriefTranscript = (prev: string, fresh: string): string => {
   if (!prev) return fresh;
   if (!fresh) return prev;
@@ -154,8 +165,10 @@ const demoteFreshGoalToScope = (fresh: string): string => {
 const mergePrevious = (prev: string, fresh: string): string => {
   const mergeFresh = demoteFreshGoalToScope(fresh);
   // Merge header sections
+  const recentEvidence = freshRecentEvidenceSection(sectionOf(prev, "Evidence Handles"), sectionOf(mergeFresh, "Evidence Handles"));
   const headers = HEADER_NAMES
     .map((header) => {
+      if (header === "Recent Evidence Handles") return recentEvidence;
       const freshSec = sectionOf(mergeFresh, header);
       const prevSec = sectionOf(prev, header);
       return mergeHeaderSection(header, prevSec, freshSec);
