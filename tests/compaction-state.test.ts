@@ -57,18 +57,20 @@ describe("compaction state", () => {
     expect(rendered.layers).toEqual([]);
   });
 
-  it("renders recent evidence after current scope", () => {
+  it("renders recent preference and evidence sections after current scope", () => {
     const state = buildCompactionState(sectionData({
       sessionGoal: ["Benchmark compaction"],
       evidenceHandles: ["Paths: src/cache/probe.ts"],
       currentScope: ["Keep going"],
     }));
+    state.current.recentUserPreferences = ["Prefer query read only mode"];
     state.current.recentEvidenceHandles = ["Identifiers: req_cache_beta"];
     const rendered = renderCompactionState(state);
     expect(rendered.layers.map((layer) => layer.name)).toEqual([
       "Pi VCC Session Goal",
       "Pi VCC Evidence Handles",
       "Pi VCC Current Scope",
+      "Pi VCC Recent User Preferences",
       "Pi VCC Recent Evidence Handles",
     ]);
   });

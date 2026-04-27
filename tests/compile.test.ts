@@ -149,6 +149,30 @@ describe("compile", () => {
     expect(current).toContain("[Evidence Handles]\n- Paths: src/cache/probe.ts\n- Identifiers: req_cache_beta");
   });
 
+  it("places newly discovered preferences in a later recent section", () => {
+    const previousSummary = "[Session Goal]\n- Existing goal\n\n[User Preferences]\n- Always use Docker for benchmarks\n\n---\n\n[user]\nExisting goal";
+    const r = compile({
+      previousSummary,
+      messages: [userMsg("I would prefer query read only mode")],
+    });
+    const current = r.split("\n\n---\n\n")[0];
+    expect(current).toContain("[User Preferences]\n- Always use Docker for benchmarks");
+    expect(current).toContain("[Recent User Preferences]\n- I would prefer query read only mode");
+    expect(current.indexOf("[User Preferences]")).toBeLessThan(current.indexOf("[Recent User Preferences]"));
+  });
+
+  it("applies preference corrections to the stable preference section", () => {
+    const previousSummary = "[Session Goal]\n- Existing goal\n\n[User Preferences]\n- prefer yarn test\n\n---\n\n[user]\nExisting goal";
+    const r = compile({
+      previousSummary,
+      messages: [userMsg("Correction: never use yarn here. Use npm test.")],
+    });
+    const current = r.split("\n\n---\n\n")[0];
+    expect(current).toContain("never use yarn");
+    expect(current).not.toContain("prefer yarn test");
+    expect(current).not.toContain("[Recent User Preferences]");
+  });
+
   it("places newly discovered evidence in a later recent section", () => {
     const previousSummary = "[Session Goal]\n- Existing goal\n\n[Evidence Handles]\n- Paths: src/cache/probe.ts\n\n---\n\n[user]\nExisting goal";
     const r = compile({
