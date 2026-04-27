@@ -197,6 +197,51 @@ docker run --rm \
 
 Assertion failures are expected for current baselines while the RED scenarios are documenting known gaps. Use selected compactors when checking one implementation at a time.
 
+## Comparing refs
+
+Use the ref comparison runner when you need an original-vs-implementation benchmark instead of a single working-tree run. It creates isolated git worktrees, builds each ref as its own Docker image, runs the same benchmark command in both images, and writes paired JSONL plus a Markdown delta report.
+
+A practical runnable baseline is `53dc551`, the cache-stability assertion checkpoint before the later production layout/extraction refinements. Compare it with the current checkout:
+
+```bash
+node scripts/compare-compaction-refs.mjs \
+  --baseline 53dc551 \
+  --head HEAD \
+  --compactors pi-vcc \
+  --out /tmp/pi-vcc-compaction-compare
+```
+
+Older refs can be useful historically, but they must contain a runnable version of the benchmark harness and its source dependencies.
+
+Include sampled real sessions with the same Docker-only benchmark path:
+
+```bash
+node scripts/compare-compaction-refs.mjs \
+  --baseline 53dc551 \
+  --head HEAD \
+  --compactors pi-vcc \
+  --real-only \
+  --real-sessions-dir ~/.pi/agent/sessions \
+  --real-limit 1 \
+  --show-layer-diff \
+  --out /tmp/pi-vcc-compaction-compare-real
+```
+
+The output directory contains:
+
+- `baseline.jsonl`: per-cycle metrics for the baseline ref
+- `head.jsonl`: per-cycle metrics for the implementation ref
+- `comparison.md`: aggregate deltas and notable changed cycles
+- `baseline.stderr.log` / `head.stderr.log`: benchmark diagnostics from each Docker run
+
+For cache-aware compaction, the most useful report signals are:
+
+- increased mean stable-prefix tokens
+- later `firstChangedPromptLayer` in matched cycles
+- fewer cache failure cycles
+- no increase in correctness failure cycles
+- lower or justified full-prompt token counts
+
 ## Interpreting results
 
 A useful compactor should:
