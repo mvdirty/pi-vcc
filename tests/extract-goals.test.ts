@@ -38,29 +38,27 @@ describe("extractGoals", () => {
     expect(extractGoals(blocks)).toEqual(["first goal"]);
   });
 
-  it("detects scope change with explicit pivot keywords", () => {
+  it("keeps explicit pivot keywords out of stable goals", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "user", text: "Fix login bug" },
       { kind: "assistant", text: "ok" },
       { kind: "user", text: "Actually, instead let's refactor the auth module" },
     ];
     const goals = extractGoals(blocks);
-    expect(goals).toContain("Fix login bug");
-    expect(goals).toContain("[Scope change]");
-    expect(goals.some((g) => g.includes("refactor"))).toBe(true);
+    expect(goals).toEqual(["Fix login bug"]);
   });
 
-  it("detects scope change from new task statements", () => {
+  it("keeps new task statements out of stable goals", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "user", text: "Fix login bug" },
       { kind: "assistant", text: "done" },
       { kind: "user", text: "Now implement the user registration flow" },
     ];
     const goals = extractGoals(blocks);
-    expect(goals).toContain("[Scope change]");
+    expect(goals).toEqual(["Fix login bug"]);
   });
 
-  it("keeps latest scope change only", () => {
+  it("keeps stable goals unchanged across multiple scope changes", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "user", text: "Fix login bug" },
       { kind: "assistant", text: "done" },
@@ -68,9 +66,7 @@ describe("extractGoals", () => {
       { kind: "assistant", text: "ok" },
       { kind: "user", text: "Change of plan, implement password reset" },
     ];
-    const goals = extractGoals(blocks);
-    const scopeIdx = goals.indexOf("[Scope change]");
-    expect(goals[scopeIdx + 1]).toContain("password reset");
+    expect(extractGoals(blocks)).toEqual(["Fix login bug"]);
   });
 
   it("skips noise short user messages as goals", () => {

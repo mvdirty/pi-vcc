@@ -55,9 +55,14 @@ const isSubstantiveGoal = (text: string): boolean => {
 // so that pasted outputs below the actual instruction do not trigger matches.
 const LEADING_CHARS = 200;
 
-export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
-  const goals: string[] = [];
-  let latestScopeChange: string[] | null = null;
+export interface GoalExtraction {
+  stableGoals: string[];
+  currentScope: string[];
+}
+
+export const extractGoalState = (blocks: NormalizedBlock[]): GoalExtraction => {
+  const stableGoals: string[] = [];
+  let latestScopeChange: string[] = [];
 
   for (const b of blocks) {
     if (b.kind !== "user") continue;
@@ -68,8 +73,8 @@ export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
       .filter((l) => l.length > 5);
     if (lines.length === 0) continue;
 
-    if (goals.length === 0) {
-      goals.push(...lines.slice(0, 6));
+    if (stableGoals.length === 0) {
+      stableGoals.push(...lines.slice(0, 6));
       continue;
     }
 
@@ -81,10 +86,11 @@ export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
     }
   }
 
-  // Only emit the [Scope change] marker when we actually captured bullets.
-  if (latestScopeChange && latestScopeChange.length > 0) {
-    goals.push("[Scope change]", ...latestScopeChange);
-  }
-
-  return goals.slice(0, 8);
+  return {
+    stableGoals: stableGoals.slice(0, 8),
+    currentScope: latestScopeChange.slice(0, 5),
+  };
 };
+
+export const extractGoals = (blocks: NormalizedBlock[]): string[] =>
+  extractGoalState(blocks).stableGoals;

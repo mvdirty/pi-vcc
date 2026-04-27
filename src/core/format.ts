@@ -26,6 +26,7 @@ export const RECALL_NOTE =
 export const formatSummary = (data: SectionData): string => {
   const headerParts = [
     section("Session Goal", data.sessionGoal),
+    section("Current Scope", data.currentScope),
     section("Files And Changes", data.filesAndChanges),
     section("Commits", data.commits),
     section("Evidence Handles", data.evidenceHandles),

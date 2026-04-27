@@ -6,6 +6,7 @@ describe("buildSections", () => {
   it("returns all-empty for no blocks", () => {
     const r = buildSections({ blocks: [] });
     expect(r.sessionGoal).toEqual([]);
+    expect(r.currentScope).toEqual([]);
     expect(r.outstandingContext).toEqual([]);
     expect(r.evidenceHandles).toEqual([]);
     expect(r.briefTranscript).toBe("");
@@ -71,6 +72,17 @@ describe("buildSections", () => {
     expect(evidence).toContain("cache_probe_A17");
     expect(evidence).toContain("spn_cache_keep_91");
     expect(evidence).toContain("9f3a2b1");
+  });
+
+  it("separates scope changes from stable goals", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "user", text: "Build a local ClickHouse-based OpenTelemetry ingestion and query system." },
+      { kind: "user", text: "Good, now lets add meta monitoring for the chart itself." },
+      { kind: "user", text: "Status update: validate dashboard provisioning next." },
+    ];
+    const r = buildSections({ blocks });
+    expect(r.sessionGoal).toEqual(["Build a local ClickHouse-based OpenTelemetry ingestion and query system."]);
+    expect(r.currentScope).toEqual(["Good, now lets add meta monitoring for the chart itself."]);
   });
 
   it("summarizes bulky tool errors without pasting low-value log lines", () => {

@@ -2,6 +2,7 @@ import type { TranscriptEntry } from "./core/brief";
 
 export interface SectionData {
   sessionGoal: string[];
+  currentScope: string[];
   outstandingContext: string[];
   filesAndChanges: string[];
   commits: string[];

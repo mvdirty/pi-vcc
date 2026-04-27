@@ -2,7 +2,7 @@ import type { NormalizedBlock } from "../types";
 import { clip, clipSentence, nonEmptyLines } from "./content";
 import { summarizeToolResultForPrompt } from "./tool-result-summary";
 import type { SectionData } from "../sections";
-import { extractGoals } from "../extract/goals";
+import { extractGoalState } from "../extract/goals";
 import { extractFiles } from "../extract/files";
 import { extractPreferences, dedupPreferencesAgainstGoals } from "../extract/preferences";
 import { extractCommits, formatCommits } from "../extract/commits";
@@ -64,13 +64,14 @@ const formatFileActivity = (blocks: NormalizedBlock[]): string[] => {
 export const buildSections = (input: BuildSectionsInput): SectionData => {
   const { blocks } = input;
   const briefSections = buildBriefSections(blocks);
-  const sessionGoal = extractGoals(blocks);
+  const goalState = extractGoalState(blocks);
   const userPreferences = dedupPreferencesAgainstGoals(
     extractPreferences(blocks),
-    sessionGoal,
+    [...goalState.stableGoals, ...goalState.currentScope],
   );
   return {
-    sessionGoal,
+    sessionGoal: goalState.stableGoals,
+    currentScope: goalState.currentScope,
     outstandingContext: extractOutstandingContext(blocks),
     filesAndChanges: formatFileActivity(blocks),
     commits: formatCommits(extractCommits(blocks)),

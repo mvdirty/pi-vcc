@@ -12,7 +12,7 @@ export interface CompileInput {
   fileOps?: FileOps;
 }
 
-const HEADER_NAMES = ["Session Goal", "Files And Changes", "Commits", "Evidence Handles", "User Preferences", "Outstanding Context"];
+const HEADER_NAMES = ["Session Goal", "Current Scope", "Files And Changes", "Commits", "Evidence Handles", "User Preferences", "Outstanding Context"];
 
 const SEPARATOR = "\n\n---\n\n";
 
@@ -46,8 +46,8 @@ const briefOf = (text: string): string => {
 
 /** Merge a header section */
 const mergeHeaderSection = (header: string, prev: string, fresh: string): string => {
-  // Outstanding Context is volatile -- always use fresh only
-  if (header === "Outstanding Context") return fresh;
+  // Volatile sections -- always use fresh only
+  if (header === "Outstanding Context" || header === "Current Scope") return fresh;
   if (!prev) return fresh;
   if (!fresh) return prev;
 
