@@ -141,12 +141,40 @@ Run assertion mode. This exits non-zero if any selected compactor misses active/
 bun scripts/bench-compaction.ts --compactors pi-vcc --assert
 ```
 
+Append sampled real Pi sessions from a local session directory. Real-session cases have no gold state assertions; they are useful for size, latency, growth, and cache-churn signals:
+
+```bash
+bun scripts/bench-compaction.ts \
+  --real-sessions-dir ~/.pi/agent/sessions \
+  --real-limit 2 \
+  --compactors pi-vcc
+```
+
+Run only sampled real sessions:
+
+```bash
+bun scripts/bench-compaction.ts \
+  --real-only \
+  --real-sessions-dir ~/.pi/agent/sessions \
+  --real-limit 2 \
+  --compactors pi-vcc \
+  --jsonl
+```
+
 Run the same checks in Docker:
 
 ```bash
 docker build -t pi-vcc-bench .
 docker run --rm pi-vcc-bench
 docker run --rm pi-vcc-bench --compactors pi-vcc --assert
+docker run --rm \
+  -v ~/.pi/agent/sessions:/sessions:ro \
+  pi-vcc-bench \
+  --real-only \
+  --real-sessions-dir /sessions \
+  --real-limit 2 \
+  --compactors pi-vcc \
+  --jsonl
 ```
 
 Assertion failures are expected for current baselines while the RED scenarios are documenting known gaps. Use selected compactors when checking one implementation at a time.

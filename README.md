@@ -233,7 +233,20 @@ bun scripts/bench-compaction.ts --compactors pi-vcc --assert
 docker run --rm pi-vcc-bench --compactors pi-vcc --assert
 ```
 
-Assertion failures are expected for current baselines while these RED scenarios document known gaps. The default benchmark is deterministic and does not call model providers. Provider-reported cached-token and latency measurements should be added as an opt-in benchmark because they require credentials and can create billable requests.
+Sample real Pi sessions for size, latency, and cache-churn metrics:
+
+```bash
+docker run --rm \
+  -v ~/.pi/agent/sessions:/sessions:ro \
+  pi-vcc-bench \
+  --real-only \
+  --real-sessions-dir /sessions \
+  --real-limit 2 \
+  --compactors pi-vcc \
+  --jsonl
+```
+
+Assertion failures are expected for current baselines while these RED scenarios document known gaps. The default synthetic benchmark is deterministic and does not call model providers. Real-session sampling depends on the mounted local session corpus. Provider-reported cached-token and latency measurements should be added as an opt-in benchmark because they require credentials and can create billable requests.
 
 ## Config
 

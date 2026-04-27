@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { failedGatesOf, offlineCompactors, runOfflineCompactionBenchmark } from "../bench/compaction/offline-runner";
+import { syntheticCompactionCases } from "../bench/compaction/synthetic-cases";
+import { loadRealSessionCases } from "../bench/compaction/real-sessions";
 
 const args = process.argv.slice(2);
 
@@ -12,6 +14,10 @@ const argValue = (name: string): string | undefined => {
 };
 
 const hasFlag = (name: string): boolean => args.includes(name);
+
+const realSessionsDir = argValue("--real-sessions-dir");
+const realLimitRaw = argValue("--real-limit");
+const realLimit = realLimitRaw ? Number.parseInt(realLimitRaw, 10) : undefined;
 
 const selected = argValue("--compactors")
   ?.split(",")
@@ -30,7 +36,12 @@ if (selected && compactors.length !== selected.length) {
   process.exit(1);
 }
 
-const result = runOfflineCompactionBenchmark({ compactors });
+const cases = hasFlag("--real-only") ? [] : [...syntheticCompactionCases];
+if (realSessionsDir) {
+  cases.push(...await loadRealSessionCases({ sessionsDir: realSessionsDir, limit: realLimit }));
+}
+
+const result = runOfflineCompactionBenchmark({ compactors, cases });
 const failures = result.cycles
   .map((cycle) => ({ cycle, gates: failedGatesOf(cycle) }))
   .filter((entry) => entry.gates.length > 0);
