@@ -191,6 +191,50 @@ Typical workflow: **search → find relevant entry indices → expand those indi
 5. **Format** — render into bracketed sections + transcript
 6. **Merge** — if previous summary exists: sticky sections merge, volatile sections replace, transcript rolls
 
+## Compaction benchmark
+
+An offline benchmark harness lives under `bench/compaction`. It replays pressure-style synthetic long-session scenarios through multiple compactors and records continuation-oriented metrics: exact state recovery, current-state recovery, recall recovery, prompt size, layer churn, longest common prefix, stale-fact leakage, and recall-only offload leakage.
+
+Run all offline compactors:
+
+```bash
+bun scripts/bench-compaction.ts
+```
+
+Emit one JSON record per compaction cycle:
+
+```bash
+bun scripts/bench-compaction.ts --jsonl > bench-results.jsonl
+```
+
+Limit the comparison to selected compactors:
+
+```bash
+bun scripts/bench-compaction.ts --compactors pi-vcc,cache-aware-layered
+```
+
+Run the same benchmark in Docker:
+
+```bash
+docker build -t pi-vcc-bench .
+docker run --rm pi-vcc-bench
+```
+
+Pass benchmark arguments after the image name:
+
+```bash
+docker run --rm pi-vcc-bench --compactors pi-vcc,cache-aware-layered
+```
+
+Use assertion mode when checking a selected compactor against the current benchmark gates:
+
+```bash
+bun scripts/bench-compaction.ts --compactors pi-vcc --assert
+docker run --rm pi-vcc-bench --compactors pi-vcc --assert
+```
+
+Assertion failures are expected for current baselines while these RED scenarios document known gaps. The default benchmark is deterministic and does not call model providers. Provider-reported cached-token and latency measurements should be added as an opt-in benchmark because they require credentials and can create billable requests.
+
 ## Config
 
 Config lives at `~/.pi/agent/pi-vcc-config.json` (auto-scaffolded on first load with safe defaults):
