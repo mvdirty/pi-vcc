@@ -141,11 +141,17 @@ Run assertion mode. This exits non-zero if any selected compactor misses active/
 bun scripts/bench-compaction.ts --compactors pi-vcc --assert
 ```
 
-Run cache assertion mode for synthetic cache-stability probes. This is separate from correctness assertions and currently checks that volatile-only updates do not rewrite early stable prompt layers:
+Run cache assertion mode for synthetic cache-stability probes. This is separate from correctness assertions and checks that each cache probe first changes only at its intended recent/volatile boundary, with a minimum stable-prefix token floor:
 
 ```bash
 bun scripts/bench-compaction.ts --compactors pi-vcc --assert-cache
 ```
+
+The current cache-boundary probes are:
+
+- `cache-bust-volatile-next-step`: first change should be `Pi VCC Outstanding Context` or later.
+- `cache-bust-evidence-growth`: first change should be `Pi VCC Recent Evidence Handles` or later.
+- `cache-bust-scope-growth`: first change should be `Pi VCC Recent Scope Updates` or later.
 
 Append sampled real Pi sessions from a local session directory. Real-session cases have no gold state assertions; they are useful for size, latency, growth, and cache-churn signals:
 

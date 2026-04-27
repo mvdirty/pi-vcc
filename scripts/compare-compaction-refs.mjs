@@ -80,17 +80,39 @@ const correctnessFailures = (cycle) => [
   ...(cycle.leakedActiveAbsentTerms ?? []),
 ].length;
 
+const cacheBoundaries = {
+  "cache-bust-volatile-next-step": {
+    allowedFirstChangedLayers: [
+      "Pi VCC Outstanding Context",
+      "Pi VCC Brief Transcript",
+      "Kept Raw Tail",
+    ],
+    minStablePrefixTokens: 90,
+  },
+  "cache-bust-evidence-growth": {
+    allowedFirstChangedLayers: [
+      "Pi VCC Recent Evidence Handles",
+      "Pi VCC Brief Transcript",
+      "Kept Raw Tail",
+    ],
+    minStablePrefixTokens: 110,
+  },
+  "cache-bust-scope-growth": {
+    allowedFirstChangedLayers: [
+      "Pi VCC Recent Scope Updates",
+      "Pi VCC Brief Transcript",
+      "Kept Raw Tail",
+    ],
+    minStablePrefixTokens: 110,
+  },
+};
+
 const cacheFailures = (cycle) => {
-  if (cycle.caseId !== "cache-bust-volatile-next-step" || cycle.cycle <= 1) return 0;
-  const early = new Set([
-    "Pi VCC Session Goal",
-    "Pi VCC Files And Changes",
-    "Pi VCC Evidence Handles",
-    "Pi VCC User Preferences",
-  ]);
+  const boundary = cacheBoundaries[cycle.caseId];
+  if (!boundary || cycle.cycle <= 1) return 0;
   let count = 0;
-  if (cycle.firstChangedPromptLayer && early.has(cycle.firstChangedPromptLayer)) count += 1;
-  if ((cycle.stablePrefixTokens ?? 0) < 90) count += 1;
+  if (!cycle.firstChangedPromptLayer || !boundary.allowedFirstChangedLayers.includes(cycle.firstChangedPromptLayer)) count += 1;
+  if ((cycle.stablePrefixTokens ?? 0) < boundary.minStablePrefixTokens) count += 1;
   return count;
 };
 

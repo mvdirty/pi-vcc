@@ -695,21 +695,43 @@ export const failedGatesOf = (cycle: CycleMetrics): string[] => {
   return failures;
 };
 
-const CACHE_STABILITY_CASES = new Set(["cache-bust-volatile-next-step"]);
-const EARLY_VOLATILE_LAYERS = new Set([
-  "Pi VCC Session Goal",
-  "Pi VCC Files And Changes",
-  "Pi VCC Evidence Handles",
-  "Pi VCC User Preferences",
-]);
+const CACHE_BOUNDARIES: Record<string, { allowedFirstChangedLayers: string[]; minStablePrefixTokens: number }> = {
+  "cache-bust-volatile-next-step": {
+    allowedFirstChangedLayers: [
+      "Pi VCC Outstanding Context",
+      "Pi VCC Brief Transcript",
+      "Kept Raw Tail",
+    ],
+    minStablePrefixTokens: 90,
+  },
+  "cache-bust-evidence-growth": {
+    allowedFirstChangedLayers: [
+      "Pi VCC Recent Evidence Handles",
+      "Pi VCC Brief Transcript",
+      "Kept Raw Tail",
+    ],
+    minStablePrefixTokens: 110,
+  },
+  "cache-bust-scope-growth": {
+    allowedFirstChangedLayers: [
+      "Pi VCC Recent Scope Updates",
+      "Pi VCC Brief Transcript",
+      "Kept Raw Tail",
+    ],
+    minStablePrefixTokens: 110,
+  },
+};
 
 export const failedCacheGatesOf = (cycle: CycleMetrics): string[] => {
-  if (!CACHE_STABILITY_CASES.has(cycle.caseId) || cycle.cycle <= 1) return [];
+  const boundary = CACHE_BOUNDARIES[cycle.caseId];
+  if (!boundary || cycle.cycle <= 1) return [];
   const failures: string[] = [];
-  if (cycle.firstChangedPromptLayer && EARLY_VOLATILE_LAYERS.has(cycle.firstChangedPromptLayer)) {
-    failures.push("early-prompt-layer-changed");
+  if (!cycle.firstChangedPromptLayer) {
+    failures.push("missing-first-changed-layer");
+  } else if (!boundary.allowedFirstChangedLayers.includes(cycle.firstChangedPromptLayer)) {
+    failures.push("unexpected-first-changed-layer");
   }
-  if ((cycle.stablePrefixTokens ?? 0) < 90) failures.push("stable-prefix-too-small");
+  if ((cycle.stablePrefixTokens ?? 0) < boundary.minStablePrefixTokens) failures.push("stable-prefix-too-small");
   return failures;
 };
 
