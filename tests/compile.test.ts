@@ -149,6 +149,18 @@ describe("compile", () => {
     expect(current).toContain("[Evidence Handles]\n- Paths: src/cache/probe.ts\n- Identifiers: req_cache_beta");
   });
 
+  it("places newly discovered scope in a later recent section", () => {
+    const previousSummary = "[Session Goal]\n- Existing goal\n\n[Current Scope]\n- Add dashboard provisioning checks\n\n---\n\n[user]\nExisting goal";
+    const r = compile({
+      previousSummary,
+      messages: [userMsg("Also add provider cache accounting notes to the current scope")],
+    });
+    const current = r.split("\n\n---\n\n")[0];
+    expect(current).toContain("[Current Scope]\n- Add dashboard provisioning checks");
+    expect(current).toContain("[Recent Scope Updates]\n- Also add provider cache accounting notes to the current scope");
+    expect(current.indexOf("[Current Scope]")).toBeLessThan(current.indexOf("[Recent Scope Updates]"));
+  });
+
   it("places newly discovered preferences in a later recent section", () => {
     const previousSummary = "[Session Goal]\n- Existing goal\n\n[User Preferences]\n- Always use Docker for benchmarks\n\n---\n\n[user]\nExisting goal";
     const r = compile({

@@ -252,6 +252,41 @@ export const syntheticCompactionCases: CompactionBenchmarkCase[] = [
     },
   },
   {
+    id: "cache-bust-scope-growth",
+    description: "Stable objective and evidence remain fixed while additive scope updates change across compactions.",
+    messages: [
+      user("Build cache-aware compaction. Stable objective: preserve cacheable prefix while keeping continuation state recoverable."),
+      assistant("Stable checkpoint: preserve cacheable prefix; canonical file src/core/compaction-state.ts; validation in Docker."),
+      user("Also add dashboard provisioning checks to the current scope."),
+      assistant("I will include dashboard provisioning checks in the current scope without changing the stable objective."),
+      user("Also add Grafana datasource validation to the current scope."),
+      assistant("I will include Grafana datasource validation as the latest scope update."),
+      user("Also add provider cache accounting notes to the current scope."),
+      assistant("I will include provider cache accounting notes while preserving the stable objective."),
+    ],
+    compactionPoints: [4, 6, 8],
+    gold: {
+      activeTerms: [
+        { label: "stable objective", term: "preserve cacheable prefix" },
+        { label: "canonical file", term: "src/core/compaction-state.ts" },
+        { label: "first scope", term: "dashboard provisioning checks" },
+        { label: "latest scope", term: "provider cache accounting notes" },
+      ],
+      currentTerms: [
+        { label: "stable objective", term: "preserve cacheable prefix" },
+        { label: "canonical file", term: "src/core/compaction-state.ts" },
+        { label: "first scope", term: "dashboard provisioning checks" },
+        { label: "latest scope", term: "provider cache accounting notes" },
+      ],
+      recallTerms: [
+        { label: "middle scope", term: "Grafana datasource validation", query: "Grafana datasource validation" },
+      ],
+      continuationTerms: [
+        { label: "latest scope", term: "provider cache accounting notes" },
+      ],
+    },
+  },
+  {
     id: "cache-bust-evidence-growth",
     description: "Stable work state remains unchanged while new evidence handles are discovered across compactions.",
     messages: [

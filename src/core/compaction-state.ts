@@ -18,6 +18,7 @@ export interface CompactionState {
   current: {
     sessionGoal: string[];
     currentScope: string[];
+    recentScopeUpdates: string[];
     filesAndChanges: string[];
     commits: string[];
     evidenceHandles: string[];
@@ -41,6 +42,7 @@ export const CURRENT_SECTION_ORDER = [
   "Evidence Handles",
   "User Preferences",
   "Current Scope",
+  "Recent Scope Updates",
   "Recent User Preferences",
   "Recent Evidence Handles",
   "Outstanding Context",
@@ -52,6 +54,7 @@ const stateKeyOf = (section: CurrentSectionName): keyof CompactionState["current
   switch (section) {
     case "Session Goal": return "sessionGoal";
     case "Current Scope": return "currentScope";
+    case "Recent Scope Updates": return "recentScopeUpdates";
     case "Files And Changes": return "filesAndChanges";
     case "Commits": return "commits";
     case "Evidence Handles": return "evidenceHandles";
@@ -72,6 +75,7 @@ export const buildCompactionState = (data: SectionData): CompactionState => ({
   current: {
     sessionGoal: data.sessionGoal,
     currentScope: data.currentScope,
+    recentScopeUpdates: [],
     filesAndChanges: data.filesAndChanges,
     commits: data.commits,
     evidenceHandles: data.evidenceHandles,
@@ -101,6 +105,7 @@ export const renderCurrentSections = (state: CompactionState): CompiledSummaryLa
 const emptyCurrent = (): CompactionState["current"] => ({
   sessionGoal: [],
   currentScope: [],
+  recentScopeUpdates: [],
   filesAndChanges: [],
   commits: [],
   evidenceHandles: [],

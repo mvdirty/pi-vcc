@@ -23,7 +23,7 @@ export interface CompileInput {
 
 export type { CompiledLayerRole, CompiledSummaryLayer, CompileWithLayersResult } from "./compaction-state";
 
-const HEADER_NAMES = ["Evidence Handles", "Recent Evidence Handles", "Recent User Preferences", ...CURRENT_SECTION_ORDER];
+const HEADER_NAMES = ["Evidence Handles", "Recent Evidence Handles", "Recent User Preferences", "Recent Scope Updates", ...CURRENT_SECTION_ORDER];
 
 const SEPARATOR = "\n\n---\n\n";
 
@@ -59,9 +59,8 @@ const briefOf = (text: string): string => {
 const mergeHeaderSection = (header: string, prev: string, fresh: string): string => {
   if (header === "Evidence Handles") return prev || fresh;
   if (header === "User Preferences" && prev && fresh && !/\b(correction|never)\b/i.test(fresh)) return prev;
-  // Current Scope is the latest explicit scope change; keep previous when the
-  // fresh window only has status/transcript updates.
-  if (header === "Current Scope") return fresh || prev;
+  // Keep established scope stable; additive fresh scope is rendered later.
+  if (header === "Current Scope") return prev || fresh;
   // Outstanding Context is volatile -- always use fresh only.
   if (header === "Outstanding Context") return fresh;
   if (!prev) return fresh;
@@ -138,6 +137,13 @@ const freshRecentEvidenceSection = (prevEvidence: string, freshEvidence: string)
   return freshOnly.length > 0 ? `[Recent Evidence Handles]\n${freshOnly.join("\n")}` : "";
 };
 
+const freshRecentScopeSection = (prevScope: string, freshScope: string): string => {
+  if (!prevScope || !freshScope) return "";
+  const previous = new Set(cleanListItemsOf(prevScope));
+  const freshOnly = cleanListItemsOf(freshScope).filter((line) => !previous.has(line));
+  return freshOnly.length > 0 ? `[Recent Scope Updates]\n${freshOnly.join("\n")}` : "";
+};
+
 const freshRecentUserPreferencesSection = (prevPreferences: string, freshPreferences: string): string => {
   if (!prevPreferences || !freshPreferences || /\b(correction|never)\b/i.test(freshPreferences)) return "";
   const previous = new Set(cleanListItemsOf(prevPreferences));
@@ -177,10 +183,12 @@ const mergePrevious = (prev: string, fresh: string): string => {
   // Merge header sections
   const recentEvidence = freshRecentEvidenceSection(sectionOf(prev, "Evidence Handles"), sectionOf(mergeFresh, "Evidence Handles"));
   const recentUserPreferences = freshRecentUserPreferencesSection(sectionOf(prev, "User Preferences"), sectionOf(mergeFresh, "User Preferences"));
+  const recentScope = freshRecentScopeSection(sectionOf(prev, "Current Scope"), sectionOf(mergeFresh, "Current Scope"));
   const headers = HEADER_NAMES
     .map((header) => {
       if (header === "Recent Evidence Handles") return recentEvidence;
       if (header === "Recent User Preferences") return recentUserPreferences;
+      if (header === "Recent Scope Updates") return recentScope;
       const freshSec = sectionOf(mergeFresh, header);
       const prevSec = sectionOf(prev, header);
       return mergeHeaderSection(header, prevSec, freshSec);

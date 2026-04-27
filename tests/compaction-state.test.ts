@@ -63,6 +63,7 @@ describe("compaction state", () => {
       evidenceHandles: ["Paths: src/cache/probe.ts"],
       currentScope: ["Keep going"],
     }));
+    state.current.recentScopeUpdates = ["Validate dashboards"];
     state.current.recentUserPreferences = ["Prefer query read only mode"];
     state.current.recentEvidenceHandles = ["Identifiers: req_cache_beta"];
     const rendered = renderCompactionState(state);
@@ -70,6 +71,7 @@ describe("compaction state", () => {
       "Pi VCC Session Goal",
       "Pi VCC Evidence Handles",
       "Pi VCC Current Scope",
+      "Pi VCC Recent Scope Updates",
       "Pi VCC Recent User Preferences",
       "Pi VCC Recent Evidence Handles",
     ]);
