@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { failedGatesOf, offlineCompactors, runOfflineCompactionBenchmark } from "../bench/compaction/offline-runner";
+import { failedCacheGatesOf, failedGatesOf, offlineCompactors, runOfflineCompactionBenchmark } from "../bench/compaction/offline-runner";
 import { syntheticCompactionCases } from "../bench/compaction/synthetic-cases";
 import { loadRealSessionCases } from "../bench/compaction/real-sessions";
 
@@ -50,6 +50,9 @@ const result = runOfflineCompactionBenchmark({ compactors, cases: filteredCases,
 const failures = result.cycles
   .map((cycle) => ({ cycle, gates: failedGatesOf(cycle) }))
   .filter((entry) => entry.gates.length > 0);
+const cacheFailures = result.cycles
+  .map((cycle) => ({ cycle, gates: failedCacheGatesOf(cycle) }))
+  .filter((entry) => entry.gates.length > 0);
 
 if (hasFlag("--jsonl")) {
   for (const cycle of result.cycles) {
@@ -59,14 +62,16 @@ if (hasFlag("--jsonl")) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-if (hasFlag("--assert") && failures.length > 0) {
-  console.error(`\nCompaction benchmark assertions failed: ${failures.length} cycle(s)`);
-  for (const { cycle, gates } of failures.slice(0, 20)) {
+const printFailures = (title: string, entries: typeof failures) => {
+  console.error(`\n${title}: ${entries.length} cycle(s)`);
+  for (const { cycle, gates } of entries.slice(0, 20)) {
     console.error(JSON.stringify({
       caseId: cycle.caseId,
       compactor: cycle.compactor,
       cycle: cycle.cycle,
       gates,
+      firstChangedPromptLayer: cycle.firstChangedPromptLayer,
+      stablePrefixTokens: cycle.stablePrefixTokens,
       missingActiveTerms: cycle.missingActiveTerms,
       missingCurrentTerms: cycle.missingCurrentTerms,
       missingRecallTerms: cycle.missingRecallTerms,
@@ -75,8 +80,17 @@ if (hasFlag("--assert") && failures.length > 0) {
       leakedActiveAbsentTerms: cycle.leakedActiveAbsentTerms,
     }));
   }
-  if (failures.length > 20) {
-    console.error(`... ${failures.length - 20} additional failing cycle(s) omitted`);
+  if (entries.length > 20) {
+    console.error(`... ${entries.length - 20} additional failing cycle(s) omitted`);
   }
+};
+
+if (hasFlag("--assert") && failures.length > 0) {
+  printFailures("Compaction benchmark assertions failed", failures);
+  process.exit(1);
+}
+
+if (hasFlag("--assert-cache") && cacheFailures.length > 0) {
+  printFailures("Compaction cache assertions failed", cacheFailures);
   process.exit(1);
 }

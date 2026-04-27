@@ -729,6 +729,24 @@ export const failedGatesOf = (cycle: CycleMetrics): string[] => {
   return failures;
 };
 
+const CACHE_STABILITY_CASES = new Set(["cache-bust-volatile-next-step"]);
+const EARLY_VOLATILE_LAYERS = new Set([
+  "Pi VCC Session Goal",
+  "Pi VCC Files And Changes",
+  "Pi VCC Evidence Handles",
+  "Pi VCC User Preferences",
+]);
+
+export const failedCacheGatesOf = (cycle: CycleMetrics): string[] => {
+  if (!CACHE_STABILITY_CASES.has(cycle.caseId) || cycle.cycle <= 1) return [];
+  const failures: string[] = [];
+  if (cycle.firstChangedPromptLayer && EARLY_VOLATILE_LAYERS.has(cycle.firstChangedPromptLayer)) {
+    failures.push("early-prompt-layer-changed");
+  }
+  if ((cycle.stablePrefixTokens ?? 0) < 90) failures.push("stable-prefix-too-small");
+  return failures;
+};
+
 export const runOfflineCompactionBenchmark = (options: {
   cases?: CompactionBenchmarkCase[];
   compactors?: OfflineCompactor[];

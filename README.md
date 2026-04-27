@@ -230,7 +230,9 @@ Use assertion mode when checking a selected compactor against the current benchm
 
 ```bash
 bun scripts/bench-compaction.ts --compactors pi-vcc --assert
+bun scripts/bench-compaction.ts --compactors pi-vcc --assert-cache
 docker run --rm pi-vcc-bench --compactors pi-vcc --assert
+docker run --rm pi-vcc-bench --compactors pi-vcc --assert-cache
 ```
 
 Sample real Pi sessions for size, latency, and cache-churn metrics:
