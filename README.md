@@ -193,7 +193,7 @@ Typical workflow: **search → find relevant entry indices → expand those indi
 
 ## Compaction benchmark
 
-An offline benchmark harness lives under `bench/compaction`. It replays pressure-style synthetic long-session scenarios through multiple compactors and records continuation-oriented metrics: exact state recovery, current-state recovery, recall recovery, prompt size, layer churn, longest common prefix, stale-fact leakage, and recall-only offload leakage.
+An offline benchmark harness lives under `bench/compaction`. It replays pressure-style synthetic long-session scenarios through multiple compactors and records continuation-oriented metrics: exact state recovery, current-state recovery, recall recovery, prompt size, simulated full-prompt cache churn, longest common prefix, stale-fact leakage, and recall-only offload leakage.
 
 Run all offline compactors:
 

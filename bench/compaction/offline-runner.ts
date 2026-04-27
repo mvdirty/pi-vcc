@@ -22,6 +22,16 @@ export interface RecallDocument {
   text: string;
 }
 
+export interface PromptLayerSnapshot {
+  name: string;
+  text: string;
+}
+
+export interface PromptSnapshot {
+  text: string;
+  layers: PromptLayerSnapshot[];
+}
+
 export interface CompactorResult {
   activePromptState: string;
   layers: LayerSnapshot[];
@@ -68,11 +78,18 @@ export interface CycleMetrics {
   activeTokensEst: number;
   currentChars: number;
   currentTokensEst: number;
+  fullPromptChars: number;
+  fullPromptTokensEst: number;
   compactionMs: number;
   lcpTokensWithPrevious: number | null;
   lcpTokenRatioWithPrevious: number | null;
   firstChangedLayer: string | null;
   changedLayers: string[];
+  fullPromptLcpTokensWithPrevious: number | null;
+  fullPromptLcpTokenRatioWithPrevious: number | null;
+  firstChangedPromptLayer: string | null;
+  changedPromptLayers: string[];
+  stablePrefixTokens: number | null;
   activeTermRecall: number | null;
   currentTermRecall: number | null;
   recallTermHitRate: number | null;
@@ -87,6 +104,8 @@ export interface CycleMetrics {
   leakedForbiddenCurrentTerms: string[];
   leakedActiveAbsentTerms: string[];
   layerSizes: Record<string, number>;
+  promptLayerSizes: Record<string, number>;
+  promptLayerTokenDeltas: Record<string, number>;
 }
 
 export interface BenchmarkRunResult {
@@ -95,6 +114,7 @@ export interface BenchmarkRunResult {
     cycles: number;
     meanActiveTokensEst: number;
     meanCurrentTokensEst: number;
+    meanFullPromptTokensEst: number;
     meanCompactionMs: number;
     meanActiveTermRecall: number | null;
     meanCurrentTermRecall: number | null;
@@ -104,6 +124,8 @@ export interface BenchmarkRunResult {
     totalForbiddenCurrentLeaks: number;
     totalActiveAbsentLeaks: number;
     meanLcpTokenRatio: number | null;
+    meanFullPromptLcpTokenRatio: number | null;
+    meanStablePrefixTokens: number | null;
   }>;
 }
 
@@ -142,6 +164,59 @@ const textForRoles = (result: CompactorResult, roles: LayerRole[]): string => {
   const selected = result.layers.filter((layer) => roles.includes(layer.role));
   if (selected.length === 0) return "";
   return selected.map((layer) => `[${layer.name}]\n${layer.text}`).join("\n\n");
+};
+
+const renderPromptLayers = (layers: PromptLayerSnapshot[]): string =>
+  layers.map((layer) => `[${layer.name}]\n${layer.text}`).join("\n\n");
+
+const simulatedPromptOf = (result: CompactorResult, sourceMessages: Message[]): PromptSnapshot => {
+  const recentTail = renderedDocuments(sourceMessages.slice(-2))
+    .map((doc) => doc.text)
+    .join("\n");
+  const layers: PromptLayerSnapshot[] = [
+    {
+      name: "Provider Prefix",
+      text: [
+        "system: You are an expert coding assistant operating inside Pi.",
+        "format: preserve compacted state sections and use recall before redoing prior work.",
+      ].join("\n"),
+    },
+    {
+      name: "Tool Definitions",
+      text: "tools: read, bash, edit, write, vcc_recall",
+    },
+    {
+      name: "Project Instructions",
+      text: "project: follow local guidance, validate before claiming completion, avoid destructive actions.",
+    },
+    ...result.layers.map((layer) => ({ name: layer.name, text: layer.text })),
+    {
+      name: "Kept Raw Tail",
+      text: recentTail || "- (none)",
+    },
+  ];
+  return { layers, text: renderPromptLayers(layers) };
+};
+
+const summarizeChangedPromptLayers = (
+  previous: PromptSnapshot | undefined,
+  current: PromptSnapshot,
+): { firstChangedPromptLayer: string | null; changedPromptLayers: string[]; promptLayerTokenDeltas: Record<string, number> } => {
+  if (!previous) return { firstChangedPromptLayer: null, changedPromptLayers: [], promptLayerTokenDeltas: {} };
+  const prevByName = new Map(previous.layers.map((layer) => [layer.name, layer.text]));
+  const changedPromptLayers = current.layers
+    .filter((layer) => prevByName.get(layer.name) !== layer.text)
+    .map((layer) => layer.name);
+  const promptLayerTokenDeltas = Object.fromEntries(current.layers.map((layer) => {
+    const previousTokens = tokenize(prevByName.get(layer.name) ?? "").length;
+    const currentTokens = tokenize(layer.text).length;
+    return [layer.name, currentTokens - previousTokens];
+  }));
+  return {
+    firstChangedPromptLayer: changedPromptLayers[0] ?? null,
+    changedPromptLayers,
+    promptLayerTokenDeltas,
+  };
 };
 
 const termProbe = (terms: ExpectedTerm[] = [], sourceText: string, targetText: string): TermProbeResult[] =>
@@ -478,6 +553,8 @@ const cycleMetrics = (
   sourceMessages: Message[],
   result: CompactorResult,
   previous: CompactorResult | undefined,
+  prompt: PromptSnapshot,
+  previousPrompt: PromptSnapshot | undefined,
 ): CycleMetrics => {
   const sourceText = sourceTextOf(sourceMessages);
   const activeText = result.activePromptState;
@@ -495,6 +572,12 @@ const cycleMetrics = (
   const currentTokens = tokenize(activeText).length;
   const lcp = previous ? lcpTokens(previous.activePromptState, activeText) : null;
   const denominator = Math.min(previousTokens, currentTokens);
+  const promptChanged = summarizeChangedPromptLayers(previousPrompt, prompt);
+  const previousPromptTokens = previousPrompt ? tokenize(previousPrompt.text).length : 0;
+  const currentPromptTokens = tokenize(prompt.text).length;
+  const fullPromptLcp = previousPrompt ? lcpTokens(previousPrompt.text, prompt.text) : null;
+  const fullPromptDenominator = Math.min(previousPromptTokens, currentPromptTokens);
+  const stablePrefixTokens = previousPrompt ? fullPromptLcp : null;
 
   return {
     caseId: testCase.id,
@@ -505,11 +588,18 @@ const cycleMetrics = (
     activeTokensEst: estimateTokens(activeText),
     currentChars: currentText.length,
     currentTokensEst: estimateTokens(currentText),
+    fullPromptChars: prompt.text.length,
+    fullPromptTokensEst: estimateTokens(prompt.text),
     compactionMs: Number(result.stats.compactionMs.toFixed(3)),
     lcpTokensWithPrevious: lcp,
     lcpTokenRatioWithPrevious: lcp === null || denominator === 0 ? null : Number((lcp / denominator).toFixed(4)),
     firstChangedLayer: changed.firstChangedLayer,
     changedLayers: changed.changedLayers,
+    fullPromptLcpTokensWithPrevious: fullPromptLcp,
+    fullPromptLcpTokenRatioWithPrevious: fullPromptLcp === null || fullPromptDenominator === 0 ? null : Number((fullPromptLcp / fullPromptDenominator).toFixed(4)),
+    firstChangedPromptLayer: promptChanged.firstChangedPromptLayer,
+    changedPromptLayers: promptChanged.changedPromptLayers,
+    stablePrefixTokens,
     activeTermRecall: ratioOf(activeProbes),
     currentTermRecall: ratioOf(currentProbes),
     recallTermHitRate: ratioOf(recallProbes),
@@ -524,6 +614,8 @@ const cycleMetrics = (
     leakedForbiddenCurrentTerms,
     leakedActiveAbsentTerms: activeAbsentLeaks.map((term) => term.label),
     layerSizes: Object.fromEntries(result.layers.map((layer) => [layer.name, layer.text.length])),
+    promptLayerSizes: Object.fromEntries(prompt.layers.map((layer) => [layer.name, layer.text.length])),
+    promptLayerTokenDeltas: promptChanged.promptLayerTokenDeltas,
   };
 };
 
@@ -553,6 +645,7 @@ const aggregate = (cycles: CycleMetrics[]): BenchmarkRunResult["aggregate"] => {
       cycles: items.length,
       meanActiveTokensEst: meanRounded(items.map((item) => item.activeTokensEst)),
       meanCurrentTokensEst: meanRounded(items.map((item) => item.currentTokensEst)),
+      meanFullPromptTokensEst: meanRounded(items.map((item) => item.fullPromptTokensEst)),
       meanCompactionMs: meanRounded(items.map((item) => item.compactionMs)),
       meanActiveTermRecall: nullableMean((item) => item.activeTermRecall),
       meanCurrentTermRecall: nullableMean((item) => item.currentTermRecall),
@@ -562,6 +655,8 @@ const aggregate = (cycles: CycleMetrics[]): BenchmarkRunResult["aggregate"] => {
       totalForbiddenCurrentLeaks: items.reduce((sum, item) => sum + item.forbiddenCurrentLeakCount, 0),
       totalActiveAbsentLeaks: items.reduce((sum, item) => sum + item.activeAbsentLeakCount, 0),
       meanLcpTokenRatio: nullableMean((item) => item.lcpTokenRatioWithPrevious),
+      meanFullPromptLcpTokenRatio: nullableMean((item) => item.fullPromptLcpTokenRatioWithPrevious),
+      meanStablePrefixTokens: nullableMean((item) => item.stablePrefixTokens),
     }];
   }));
 };
@@ -589,6 +684,7 @@ export const runOfflineCompactionBenchmark = (options: {
   for (const testCase of cases) {
     for (const compactor of compactors) {
       let previous: CompactorResult | undefined;
+      let previousPrompt: PromptSnapshot | undefined;
       let previousPoint = 0;
       testCase.compactionPoints.forEach((point, index) => {
         const sourceMessages = testCase.messages.slice(0, point);
@@ -599,8 +695,10 @@ export const runOfflineCompactionBenchmark = (options: {
           previous,
           cycle: index + 1,
         });
-        cycles.push(cycleMetrics(testCase, compactor, index + 1, point, sourceMessages, result, previous));
+        const prompt = simulatedPromptOf(result, sourceMessages);
+        cycles.push(cycleMetrics(testCase, compactor, index + 1, point, sourceMessages, result, previous, prompt, previousPrompt));
         previous = result;
+        previousPrompt = prompt;
         previousPoint = point;
       });
     }

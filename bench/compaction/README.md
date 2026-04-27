@@ -98,6 +98,23 @@ Each compaction cycle records:
 
 The cache-oriented metrics are offline approximations. They do not replace provider-reported cached-token accounting, but they highlight prompt churn that is likely to hurt prefix-based caching.
 
+## Full-prompt cache simulation
+
+Each cycle also builds a simulated provider prompt so cache churn can be measured outside the compacted summary alone. The simulated prompt contains stable provider/tool/project layers, the compactor's rendered layers, and a small kept raw tail. This does not exactly reproduce Pi's production request, but it catches the main prefix-cache risk: a volatile update moving earlier than necessary.
+
+Additional cache fields include:
+
+- `fullPromptChars` and `fullPromptTokensEst`
+- `fullPromptLcpTokensWithPrevious`
+- `fullPromptLcpTokenRatioWithPrevious`
+- `firstChangedPromptLayer`
+- `changedPromptLayers`
+- `stablePrefixTokens`
+- `promptLayerSizes`
+- `promptLayerTokenDeltas`
+
+Use these fields to compare section ordering and stable/volatile splits before adding live provider probes. A better cache-aware layout should generally increase `stablePrefixTokens`, push `firstChangedPromptLayer` later, and keep volatile deltas out of static/current prefix layers when the underlying facts did not change.
+
 ## Running
 
 Run all offline compactors:
