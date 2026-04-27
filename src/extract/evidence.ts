@@ -13,9 +13,25 @@ const ERROR_SIGNATURE_RE = /\b(?:ERR_[A-Z0-9_]+|(?:CACHE|CRITICAL|FATAL|PANIC|ER
 const ID_RE = /\b(?:cache|probe|span|spn|req|request|trace|artifact|bench)[A-Za-z0-9_-]*_[A-Za-z0-9_-]+\b/g;
 const COMMIT_RE = /\bcommit(?:\s+|[=:])([0-9a-f]{7,40})\b/gi;
 
-const addMatches = (set: Set<string>, text: string, regex: RegExp, group = 0) => {
+const normalizePathEvidence = (value: string): string =>
+  value.trim().replace(/[.,;:]+$/, "");
+
+const isSpecificPathEvidence = (value: string): boolean => {
+  const normalized = normalizePathEvidence(value);
+  if (/^\/tmp\//.test(normalized)) return true;
+  const base = normalized.split("/").at(-1) ?? "";
+  return /\.[A-Za-z0-9_-]+$/.test(base);
+};
+
+const addMatches = (
+  set: Set<string>,
+  text: string,
+  regex: RegExp,
+  group = 0,
+  normalize: (value: string) => string | null = (value) => value.trim(),
+) => {
   for (const match of text.matchAll(regex)) {
-    const value = (match[group] ?? match[0]).trim();
+    const value = normalize(match[group] ?? match[0]);
     if (value) set.add(value);
   }
 };
@@ -26,8 +42,11 @@ const textFromBlock = (block: NormalizedBlock): string => {
 };
 
 const addEvidenceFromText = (activity: EvidenceActivity, text: string) => {
-  addMatches(activity.paths, text, ABS_PATH_RE, 1);
-  addMatches(activity.paths, text, PROJECT_PATH_RE, 1);
+  addMatches(activity.paths, text, ABS_PATH_RE, 1, (value) => {
+    const normalized = normalizePathEvidence(value);
+    return isSpecificPathEvidence(normalized) ? normalized : null;
+  });
+  addMatches(activity.paths, text, PROJECT_PATH_RE, 1, (value) => normalizePathEvidence(value));
   addMatches(activity.errorSignatures, text, ERROR_SIGNATURE_RE);
   addMatches(activity.identifiers, text, ID_RE);
   addMatches(activity.identifiers, text, COMMIT_RE, 1);
@@ -43,7 +62,7 @@ export const extractEvidence = (blocks: NormalizedBlock[]): EvidenceActivity => 
   for (const block of blocks) {
     if (block.kind === "tool_call") {
       const path = extractPath(block.args);
-      if (path) activity.paths.add(path);
+      if (path) activity.paths.add(normalizePathEvidence(path));
       for (const key of ["command", "cmd", "query", "path", "file", "file_path", "filePath"]) {
         const value = block.args[key];
         if (typeof value === "string") addEvidenceFromText(activity, value);
