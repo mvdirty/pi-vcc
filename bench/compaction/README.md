@@ -100,7 +100,7 @@ The cache-oriented metrics are offline approximations. They do not replace provi
 
 ## Full-prompt cache simulation
 
-Each cycle also builds a simulated provider prompt so cache churn can be measured outside the compacted summary alone. The simulated prompt contains stable provider/tool/project layers, the compactor's rendered layers, and a small kept raw tail. This does not exactly reproduce Pi's production request, but it catches the main prefix-cache risk: a volatile update moving earlier than necessary.
+Each cycle also builds a simulated provider prompt so cache churn can be measured outside the compacted summary alone. The simulated prompt contains stable provider/tool/project layers, the compactor's rendered layers, and a small kept raw tail. For `pi-vcc`, current summary sections are split into separate simulated prompt layers so the report can identify which section changes first. This does not exactly reproduce Pi's production request, but it catches the main prefix-cache risk: a volatile update moving earlier than necessary.
 
 Additional cache fields include:
 

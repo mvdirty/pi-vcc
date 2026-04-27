@@ -29,8 +29,8 @@ export const formatSummary = (data: SectionData): string => {
     section("Files And Changes", data.filesAndChanges),
     section("Commits", data.commits),
     section("Evidence Handles", data.evidenceHandles),
-    section("Outstanding Context", data.outstandingContext),
     section("User Preferences", data.userPreferences),
+    section("Outstanding Context", data.outstandingContext),
   ].filter(Boolean);
 
   const parts: string[] = [];
