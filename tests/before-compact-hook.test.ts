@@ -3,6 +3,7 @@ import { existsSync, unlinkSync, writeFileSync, readFileSync, mkdtempSync, rmSyn
 import { tmpdir } from "os";
 import { join } from "path";
 import { registerBeforeCompactHook, PI_VCC_COMPACT_INSTRUCTION } from "../src/hooks/before-compact";
+import { PI_VCC_COMPACTION_REPORT_TYPE } from "../src/core/compaction-report";
 
 let tmpDir: string;
 let CONFIG_PATH: string;
@@ -22,7 +23,9 @@ afterAll(() => {
 // Minimal ExtensionAPI stub: capture handler + provide ctx with mocked ui.notify
 function createMockPi() {
   let handler: ((event: any, ctx: any) => any) | undefined;
+  let compactHandler: ((event: any, ctx: any) => any) | undefined;
   const notifyCalls: Array<{ msg: string; level: string }> = [];
+  const sentMessages: Array<{ message: any; options: any }> = [];
   const ctx = {
     hasUI: true,
     ui: {
@@ -35,10 +38,16 @@ function createMockPi() {
     pi: {
       on: (eventName: string, h: (e: any, c: any) => any) => {
         if (eventName === "session_before_compact") handler = h;
+        if (eventName === "session_compact") compactHandler = h;
+      },
+      sendMessage: (message: any, options: any) => {
+        sentMessages.push({ message, options });
       },
     } as any,
     invoke: (event: any) => handler!(event, ctx),
+    invokeCompact: (event: any) => compactHandler!(event, ctx),
     notifyCalls,
+    sentMessages,
   };
 }
 
@@ -164,7 +173,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
 
   test("single-user + autonomous tail → returns compaction with empty firstKeptEntryId", () => {
     setConfig({ debug: false, overrideDefaultCompaction: false });
-    const { pi, invoke, notifyCalls } = createMockPi();
+    const { pi, invoke, invokeCompact, notifyCalls, sentMessages } = createMockPi();
     registerBeforeCompactHook(pi);
 
     const entries = [
@@ -176,6 +185,19 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     const result = invoke(makeEvent(entries, PI_VCC_COMPACT_INSTRUCTION));
     expect(result.compaction).toBeDefined();
     expect(result.compaction.firstKeptEntryId).toBe("");
+    expect(result.compaction.details.report).toMatchObject({
+      compactor: "pi-vcc",
+      sourceMessageCount: 4,
+      keptMessageCount: 0,
+      tokensBefore: 1000,
+    });
     expect(notifyCalls).toHaveLength(0); // no cancel notify on success
+
+    invokeCompact({ fromExtension: true, compactionEntry: result.compaction });
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0].message.customType).toBe(PI_VCC_COMPACTION_REPORT_TYPE);
+    expect(sentMessages[0].message.display).toBe(true);
+    expect(sentMessages[0].message.details).toBe(result.compaction.details.report);
+    expect(sentMessages[0].options).toEqual({ deliverAs: "nextTurn" });
   });
 });

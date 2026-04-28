@@ -10,15 +10,32 @@ import {
   CURRENT_SECTION_ORDER,
   parseCompactionState,
   renderCompactionState,
+  type CompactionState,
   type CompiledLayerRole,
   type CompiledSummaryLayer,
   type CompileWithLayersResult,
 } from "./compaction-state";
+import {
+  buildCompactionReport,
+  type PiVccCompactionReport,
+} from "./compaction-report";
 
 export interface CompileInput {
   messages: Message[];
   previousSummary?: string;
   fileOps?: FileOps;
+}
+
+export interface CompileReportContext {
+  sourceMessageCount: number;
+  keptMessageCount: number;
+  keptTokensEst: number;
+  skippedInternalMessageCount?: number;
+  tokensBefore: number;
+}
+
+export interface CompileWithReportResult extends CompileWithLayersResult {
+  report: PiVccCompactionReport;
 }
 
 export type { CompiledLayerRole, CompiledSummaryLayer, CompileWithLayersResult } from "./compaction-state";
@@ -211,9 +228,13 @@ const mergePrevious = (prev: string, fresh: string): string => {
   return parts.join(SEPARATOR);
 };
 
-export const compile = (input: CompileInput): string => compileWithLayers(input).text;
+interface CompilationBuild {
+  state: CompactionState;
+  previousLayers: CompiledSummaryLayer[];
+  rendered: CompileWithLayersResult;
+}
 
-export const compileWithLayers = (input: CompileInput): CompileWithLayersResult => {
+const buildCompilation = (input: CompileInput): CompilationBuild => {
   const blocks = filterNoise(normalize(input.messages));
   const data = buildSections({ blocks });
   const fresh = renderCompactionState(buildCompactionState(data)).text;
@@ -223,8 +244,41 @@ export const compileWithLayers = (input: CompileInput): CompileWithLayersResult 
     ? stripRecallNote(input.previousSummary)
     : undefined;
   const merged = prev ? mergePrevious(prev, fresh) : fresh;
-  if (!merged) return { text: "", layers: [] };
-  return renderCompactionState(parseCompactionState(merged), { includeRecallNote: true });
+  const state = parseCompactionState(merged);
+  const previousLayers = prev
+    ? renderCompactionState(parseCompactionState(prev), { includeRecallNote: true }).layers
+    : [];
+  const rendered = merged
+    ? renderCompactionState(state, { includeRecallNote: true })
+    : { text: "", layers: [] };
+  return { state, previousLayers, rendered };
+};
+
+export const compile = (input: CompileInput): string => compileWithLayers(input).text;
+
+export const compileWithLayers = (input: CompileInput): CompileWithLayersResult =>
+  buildCompilation(input).rendered;
+
+export const compileWithReport = (
+  input: CompileInput,
+  context: CompileReportContext,
+): CompileWithReportResult => {
+  const compilation = buildCompilation(input);
+  return {
+    ...compilation.rendered,
+    report: buildCompactionReport({
+      layers: compilation.rendered.layers,
+      previousLayers: compilation.previousLayers,
+      state: compilation.state,
+      sourceMessageCount: context.sourceMessageCount,
+      keptMessageCount: context.keptMessageCount,
+      keptTokensEst: context.keptTokensEst,
+      skippedInternalMessageCount: context.skippedInternalMessageCount,
+      tokensBefore: context.tokensBefore,
+      previousSummaryUsed: Boolean(input.previousSummary?.trim()),
+      summaryText: compilation.rendered.text,
+    }),
+  };
 };
 
 const stripRecallNote = (text: string): string => {

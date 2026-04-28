@@ -1,8 +1,13 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { convertToLlm } from "@mariozechner/pi-coding-agent";
 import { writeFileSync } from "fs";
-import { compile } from "../core/summarize";
+import { compileWithReport } from "../core/summarize";
 import { loadSettings, type PiVccSettings } from "../core/settings";
+import {
+  formatCompactionReportMessageContent,
+  PI_VCC_COMPACTION_REPORT_TYPE,
+  type PiVccCompactionReport,
+} from "../core/compaction-report";
 import type { PiVccCompactionDetails } from "../details";
 
 export const PI_VCC_COMPACT_INSTRUCTION = "__pi_vcc__";
@@ -15,6 +20,7 @@ export interface CompactionStats {
 
 let lastStats: CompactionStats | null = null;
 let lastCompactWasPiVcc = false;
+let pendingReport: PiVccCompactionReport | null = null;
 export const getLastCompactionStats = () => lastStats;
 
 const formatTokens = (n: number): string => {
@@ -46,8 +52,11 @@ const previewContent = (content: unknown): string => {
 
 interface EntryWithMessage {
   entry: { id: string; type: string };
-  message: { role: string; content: unknown };
+  message: { role: string; content: unknown; customType?: string };
 }
+
+const isPiVccReportMessage = (message: any): boolean =>
+  message?.role === "custom" && message?.customType === PI_VCC_COMPACTION_REPORT_TYPE;
 
 export type OwnCutCancelReason =
   | "no_live_messages"
@@ -213,7 +222,9 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       return { cancel: true };
     }
 
-    const agentMessages = ownCut.messages;
+    const rawAgentMessages = ownCut.messages;
+    const skippedInternalMessageCount = rawAgentMessages.filter(isPiVccReportMessage).length;
+    const agentMessages = rawAgentMessages.filter((message: any) => !isPiVccReportMessage(message));
     const firstKeptEntryId = ownCut.firstKeptEntryId;
     const messages = convertToLlm(agentMessages);
 
@@ -233,22 +244,31 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       }, 0);
       return sum;
     }, 0);
+    const keptTokensEst = Math.round(keptChars / 4);
     lastStats = {
       summarized: agentMessages.length,
       kept: keptEntries.length,
-      keptTokensEst: Math.round(keptChars / 4),
+      keptTokensEst,
     };
 
     const config = settings;
 
-    const summary = compile({
+    const compiled = compileWithReport({
       messages,
       previousSummary: preparation.previousSummary,
       fileOps: {
         readFiles: [...preparation.fileOps.read],
         modifiedFiles: [...preparation.fileOps.written, ...preparation.fileOps.edited],
       },
+    }, {
+      sourceMessageCount: agentMessages.length,
+      keptMessageCount: keptEntries.length,
+      keptTokensEst,
+      skippedInternalMessageCount,
+      tokensBefore: preparation.tokensBefore,
     });
+    const summary = compiled.text;
+    const report = compiled.report;
 
     const branchIds = branchEntries.map((e: any) => e.id);
     const cutIdx = branchIds.indexOf(firstKeptEntryId);
@@ -264,6 +284,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     dbg(config, {
       usedOwnCut: true,
       messagesToSummarize: agentMessages.length,
+      skippedInternalMessageCount,
       messagesPreviewHead: agentMessages.slice(0, 3).map((m: any) => ({ role: m.role, preview: previewContent(m.content) })),
       messagesPreviewTail: agentMessages.slice(-3).map((m: any) => ({ role: m.role, preview: previewContent(m.content) })),
       convertedMessages: messages.length,
@@ -277,13 +298,15 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
 
     const details: PiVccCompactionDetails = {
       compactor: "pi-vcc",
-      version: 1,
+      version: 2,
       sections: [...summary.matchAll(/^\[(.+?)\]/gm)].map((m) => m[1]),
       sourceMessageCount: agentMessages.length,
       previousSummaryUsed: Boolean(preparation.previousSummary),
+      report,
     };
 
     lastCompactWasPiVcc = isPiVcc;
+    pendingReport = report;
 
     return {
       compaction: {
@@ -295,11 +318,27 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     };
   });
 
-  // Fire success toast for /compact path only (delayed to let UI settle).
-  // /pi-vcc path uses its own onComplete callback in the command handler.
   pi.on("session_compact", (event, ctx) => {
     if (!event.fromExtension) return;
-    if (lastCompactWasPiVcc) return; // /pi-vcc handles its own toast via onComplete
+
+    const details = (event.compactionEntry as any)?.details as PiVccCompactionDetails | undefined;
+    const report = details?.compactor === "pi-vcc" ? details.report : pendingReport;
+    pendingReport = null;
+
+    if (report) {
+      try {
+        pi.sendMessage({
+          customType: PI_VCC_COMPACTION_REPORT_TYPE,
+          content: formatCompactionReportMessageContent(report),
+          display: true,
+          details: report,
+        }, { deliverAs: "nextTurn" });
+      } catch {}
+    }
+
+    // Fire success toast for /compact path only (delayed to let UI settle).
+    // /pi-vcc path uses its own onComplete callback in the command handler.
+    if (lastCompactWasPiVcc) return;
     const stats = lastStats;
     if (!stats) return;
     setTimeout(() => {

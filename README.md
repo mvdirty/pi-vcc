@@ -50,6 +50,7 @@ Measured on real session JSONLs under `~/.pi/agent/sessions` (chars = rendered m
 - **`/pi-vcc-recall`** — slash command to search history directly, results shown as collapsible message and auto-fed to agent as context
 - **Fallback cut** — still works when Pi core returns nothing to summarize
 - **`/pi-vcc`** — manual compaction on demand
+- **Compaction report card** — pi-vcc emits a separate sanity-check card after compaction with message counts, stable/recent section churn, cap warnings, and machine-readable details for deeper inspection
 
 ## Install
 
@@ -74,6 +75,7 @@ pi -e https://github.com/sting8k/pi-vcc
 Once installed, pi-vcc registers a `session_before_compact` hook.
 
 - Run `/pi-vcc` to trigger pi-vcc compaction manually.
+- After pi-vcc compacts, it emits a separate `[pi-vcc]` report card. The collapsed card is a quick sanity check; expand it for section-level churn, caps, warnings, and where to inspect the full machine-readable report.
 - By default, `/compact` and auto-threshold compactions still go through pi core (LLM-based). Set `overrideDefaultCompaction: true` in the config to let pi-vcc handle all compaction paths.
 - To search older active-lineage history after compaction, use `vcc_recall`.
 - To intentionally search across all lineages, pass `scope:"all"` to `vcc_recall` or run `/pi-vcc-recall <query> scope:all`.
