@@ -144,6 +144,32 @@ const mean = (items, selector) => {
 const fmt = (value, digits = 2) => value === null || value === undefined ? "n/a" : Number(value).toFixed(digits);
 const signed = (value, digits = 2) => value === null || value === undefined ? "n/a" : `${value >= 0 ? "+" : ""}${Number(value).toFixed(digits)}`;
 
+const RECENT_MUTABLE_LAYERS = [
+  "Pi VCC Recent Scope Updates",
+  "Pi VCC Recent User Preferences",
+  "Pi VCC Recent Evidence Handles",
+];
+
+const layerRank = (layer) => {
+  if (!layer) return 999;
+  if (layer === "Provider Prefix") return 0;
+  if (layer === "Tool Definitions") return 1;
+  if (layer === "Project Instructions") return 2;
+  if (layer.startsWith("Pi VCC Session Goal")) return 3;
+  if (layer.startsWith("Pi VCC Files")) return 4;
+  if (layer.startsWith("Pi VCC Commits")) return 5;
+  if (layer.startsWith("Pi VCC Evidence Handles")) return 6;
+  if (layer.startsWith("Pi VCC User Preferences")) return 7;
+  if (layer.startsWith("Pi VCC Current Scope")) return 8;
+  if (layer.startsWith("Pi VCC Recent")) return 9;
+  if (layer.startsWith("Pi VCC Outstanding")) return 10;
+  if (layer.startsWith("Pi VCC Brief")) return 11;
+  if (layer === "Kept Raw Tail") return 12;
+  return 50;
+};
+
+const rowLabel = (row) => `${row.caseId} / ${row.compactor} / cycle ${row.cycle}`;
+
 const summarize = (label, rows) => ({
   label,
   cycles: rows.length,
@@ -181,6 +207,24 @@ const markdownReport = ({ baselineRows, headRows, baselinePath, headPath }) => {
       || correctnessFailures(baselineRow) !== correctnessFailures(headRow)
       || cacheFailures(baselineRow) !== cacheFailures(headRow))
     .slice(0, 20);
+  const worstStablePrefixDeltas = pairs
+    .filter(({ baselineRow, headRow }) => baselineRow.stablePrefixTokens !== null && headRow.stablePrefixTokens !== null)
+    .map(({ baselineRow, headRow }) => ({ baselineRow, headRow, delta: headRow.stablePrefixTokens - baselineRow.stablePrefixTokens }))
+    .sort((a, b) => a.delta - b.delta)
+    .slice(0, 10);
+  const largestPromptGrowth = pairs
+    .map(({ baselineRow, headRow }) => ({ baselineRow, headRow, delta: headRow.fullPromptTokensEst - baselineRow.fullPromptTokensEst }))
+    .sort((a, b) => b.delta - a.delta)
+    .slice(0, 10);
+  const earliestFirstChanged = headRows
+    .filter((row) => row.cycle > 1 && row.firstChangedPromptLayer)
+    .sort((a, b) => layerRank(a.firstChangedPromptLayer) - layerRank(b.firstChangedPromptLayer) || (a.stablePrefixTokens ?? 0) - (b.stablePrefixTokens ?? 0))
+    .slice(0, 10);
+  const largestRecentLayers = headRows
+    .flatMap((row) => RECENT_MUTABLE_LAYERS.map((layer) => ({ row, layer, size: row.promptLayerSizes?.[layer] ?? 0 })))
+    .filter((entry) => entry.size > 0)
+    .sort((a, b) => b.size - a.size)
+    .slice(0, 10);
 
   const lines = [];
   lines.push("# Compaction Ref Comparison");
@@ -220,6 +264,44 @@ const markdownReport = ({ baselineRows, headRows, baselinePath, headPath }) => {
     lines.push("| --- | --- | ---: | --- | --- | ---: | ---: | ---: |");
     for (const { baselineRow, headRow } of notable) {
       lines.push(`| ${headRow.caseId} | ${headRow.compactor} | ${headRow.cycle} | ${baselineRow.firstChangedPromptLayer ?? "n/a"} | ${headRow.firstChangedPromptLayer ?? "n/a"} | ${signed((headRow.stablePrefixTokens ?? 0) - (baselineRow.stablePrefixTokens ?? 0), 0)} | ${correctnessFailures(headRow) - correctnessFailures(baselineRow)} | ${cacheFailures(headRow) - cacheFailures(baselineRow)} |`);
+    }
+  }
+  lines.push("");
+  lines.push("## Outliers");
+  lines.push("");
+  lines.push("### Worst stable-prefix deltas");
+  lines.push("");
+  lines.push("| case | baseline | head | delta | head first layer |");
+  lines.push("| --- | ---: | ---: | ---: | --- |");
+  for (const { baselineRow, headRow, delta } of worstStablePrefixDeltas) {
+    lines.push(`| ${rowLabel(headRow)} | ${baselineRow.stablePrefixTokens ?? "n/a"} | ${headRow.stablePrefixTokens ?? "n/a"} | ${signed(delta, 0)} | ${headRow.firstChangedPromptLayer ?? "n/a"} |`);
+  }
+  lines.push("");
+  lines.push("### Largest full-prompt growth");
+  lines.push("");
+  lines.push("| case | baseline tokens | head tokens | delta | head first layer |");
+  lines.push("| --- | ---: | ---: | ---: | --- |");
+  for (const { baselineRow, headRow, delta } of largestPromptGrowth) {
+    lines.push(`| ${rowLabel(headRow)} | ${baselineRow.fullPromptTokensEst} | ${headRow.fullPromptTokensEst} | ${signed(delta, 0)} | ${headRow.firstChangedPromptLayer ?? "n/a"} |`);
+  }
+  lines.push("");
+  lines.push("### Earliest changed head layers");
+  lines.push("");
+  lines.push("| case | first changed layer | stable prefix tokens | full prompt tokens |");
+  lines.push("| --- | --- | ---: | ---: |");
+  for (const row of earliestFirstChanged) {
+    lines.push(`| ${rowLabel(row)} | ${row.firstChangedPromptLayer ?? "n/a"} | ${row.stablePrefixTokens ?? "n/a"} | ${row.fullPromptTokensEst} |`);
+  }
+  lines.push("");
+  lines.push("### Largest recent mutable layers");
+  lines.push("");
+  if (largestRecentLayers.length === 0) {
+    lines.push("No recent mutable layers were present in the head run.");
+  } else {
+    lines.push("| case | layer | chars |");
+    lines.push("| --- | --- | ---: |");
+    for (const { row, layer, size } of largestRecentLayers) {
+      lines.push(`| ${rowLabel(row)} | ${layer} | ${size} |`);
     }
   }
   lines.push("");
