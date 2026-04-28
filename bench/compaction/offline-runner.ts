@@ -1,11 +1,12 @@
 import { performance } from "node:perf_hooks";
 import type { Message } from "@mariozechner/pi-ai";
-import { compileWithLayers } from "../../src/core/summarize";
+import { compileWithReport } from "../../src/core/summarize";
 import { buildSections } from "../../src/core/build-sections";
 import { normalize } from "../../src/core/normalize";
 import { renderMessage } from "../../src/core/render-entries";
 import { clip, textOf } from "../../src/core/content";
 import { summarizeToolResultForPrompt } from "../../src/core/tool-result-summary";
+import type { PiVccCompactionReport } from "../../src/core/compaction-report";
 import { syntheticCompactionCases, type CompactionBenchmarkCase, type ExpectedTerm } from "./synthetic-cases";
 
 export type LayerRole = "static" | "current" | "history" | "recall";
@@ -35,6 +36,7 @@ export interface CompactorResult {
   activePromptState: string;
   layers: LayerSnapshot[];
   recallCorpus: RecallDocument[];
+  report?: PiVccCompactionReport;
   stats: {
     compactionMs: number;
     estimatedInputTokens?: number;
@@ -114,6 +116,7 @@ export interface CycleMetrics {
   promptLayerSizes: Record<string, number>;
   promptLayerTokenDeltas: Record<string, number>;
   promptLayerDiffs?: PromptLayerDiff[];
+  compactionReport?: PiVccCompactionReport;
 }
 
 export interface BenchmarkRunResult {
@@ -481,16 +484,24 @@ export const offlineCompactors: OfflineCompactor[] = [
   {
     name: "pi-vcc",
     compact: ({ messages, allMessages, previous }) => {
+      const inputTokens = estimateTokens(sourceTextOf(messages));
+      const keptTail = allMessages.slice(-2);
       const start = performance.now();
-      const summary = compileWithLayers({ messages, previousSummary: previous?.activePromptState });
+      const summary = compileWithReport({ messages, previousSummary: previous?.activePromptState }, {
+        sourceMessageCount: messages.length,
+        keptMessageCount: keptTail.length,
+        keptTokensEst: estimateTokens(sourceTextOf(keptTail)),
+        tokensBefore: estimateTokens(sourceTextOf(allMessages)),
+      });
       const elapsed = performance.now() - start;
       return {
         activePromptState: summary.text,
         layers: summary.layers,
         recallCorpus: renderedDocuments(allMessages),
+        report: summary.report,
         stats: {
           compactionMs: elapsed,
-          estimatedInputTokens: estimateTokens(sourceTextOf(messages)),
+          estimatedInputTokens: inputTokens,
           estimatedOutputTokens: estimateTokens(summary.text),
         },
       };
@@ -574,6 +585,7 @@ const cycleMetrics = (
   prompt: PromptSnapshot,
   previousPrompt: PromptSnapshot | undefined,
   includeDiagnostics: boolean,
+  includeReports: boolean,
 ): CycleMetrics => {
   const sourceText = sourceTextOf(sourceMessages);
   const activeText = result.activePromptState;
@@ -638,6 +650,7 @@ const cycleMetrics = (
     ...(includeDiagnostics && promptChanged.changedPromptLayers.length > 0
       ? { promptLayerDiffs: changedPromptLayerDiffs(previousPrompt, prompt, promptChanged.changedPromptLayers) }
       : {}),
+    ...(includeReports && result.report ? { compactionReport: result.report } : {}),
   };
 };
 
@@ -764,6 +777,7 @@ export const runOfflineCompactionBenchmark = (options: {
   cases?: CompactionBenchmarkCase[];
   compactors?: OfflineCompactor[];
   includeDiagnostics?: boolean;
+  includeReports?: boolean;
 } = {}): BenchmarkRunResult => {
   const cases = options.cases ?? syntheticCompactionCases;
   const compactors = options.compactors ?? offlineCompactors;
@@ -784,7 +798,7 @@ export const runOfflineCompactionBenchmark = (options: {
           cycle: index + 1,
         });
         const prompt = simulatedPromptOf(result, sourceMessages);
-        cycles.push(cycleMetrics(testCase, compactor, index + 1, point, sourceMessages, result, previous, prompt, previousPrompt, Boolean(options.includeDiagnostics)));
+        cycles.push(cycleMetrics(testCase, compactor, index + 1, point, sourceMessages, result, previous, prompt, previousPrompt, Boolean(options.includeDiagnostics), Boolean(options.includeReports)));
         previous = result;
         previousPrompt = prompt;
         previousPoint = point;

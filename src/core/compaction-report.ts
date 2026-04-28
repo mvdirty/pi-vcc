@@ -332,7 +332,7 @@ export const formatCompactionReportCard = (
     "",
     "Deep dive",
     "- The full machine-readable report is stored in this message's details and in compaction.details.report.",
-    "- Ask to inspect the pi-vcc compaction report or session JSONL if you want source-level detail.",
+    "- Run /pi-vcc-report for Markdown/JSON artifacts, /pi-vcc-report show for inline detail, or /pi-vcc-report list for older reports.",
   );
 
   return lines.join("\n");

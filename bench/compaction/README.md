@@ -186,6 +186,25 @@ bun scripts/bench-compaction.ts \
   --jsonl
 ```
 
+Include pi-vcc's machine-readable compaction report in each JSON/JSONL cycle when you need section policies, stable/recent churn, caps, and warnings:
+
+```bash
+bun scripts/bench-compaction.ts \
+  --compactors pi-vcc \
+  --case-filter cache-bust-scope-growth \
+  --include-report \
+  --jsonl
+```
+
+Print a human-readable report explanation instead of JSON:
+
+```bash
+bun scripts/bench-compaction.ts \
+  --compactors pi-vcc \
+  --case-filter cache-bust-scope-growth \
+  --explain
+```
+
 Run the same checks in Docker:
 
 ```bash

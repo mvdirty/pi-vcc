@@ -51,6 +51,7 @@ Measured on real session JSONLs under `~/.pi/agent/sessions` (chars = rendered m
 - **Fallback cut** — still works when Pi core returns nothing to summarize
 - **`/pi-vcc`** — manual compaction on demand
 - **Compaction report card** — pi-vcc emits a separate sanity-check card after compaction with message counts, stable/recent section churn, cap warnings, and machine-readable details for deeper inspection
+- **`/pi-vcc-report`** — writes latest report Markdown/JSON artifacts or displays the report inline for a deeper inspection channel
 
 ## Install
 
@@ -76,6 +77,7 @@ Once installed, pi-vcc registers a `session_before_compact` hook.
 
 - Run `/pi-vcc` to trigger pi-vcc compaction manually.
 - After pi-vcc compacts, it emits a separate `[pi-vcc]` report card. The collapsed card is a quick sanity check; expand it for section-level churn, caps, warnings, and where to inspect the full machine-readable report.
+- Run `/pi-vcc-report` to write the latest report to Markdown/JSON files under `/tmp/pi-vcc-reports` and show the paths. Use `/pi-vcc-report show` for an inline expanded report, `/pi-vcc-report json inline` for raw JSON, or `/pi-vcc-report list` to list available reports.
 - By default, `/compact` and auto-threshold compactions still go through pi core (LLM-based). Set `overrideDefaultCompaction: true` in the config to let pi-vcc handle all compaction paths.
 - To search older active-lineage history after compaction, use `vcc_recall`.
 - To intentionally search across all lineages, pass `scope:"all"` to `vcc_recall` or run `/pi-vcc-recall <query> scope:all`.
@@ -226,6 +228,13 @@ Pass benchmark arguments after the image name:
 
 ```bash
 docker run --rm pi-vcc-bench --compactors pi-vcc,cache-aware-layered
+```
+
+Explain pi-vcc report decisions for a focused case:
+
+```bash
+bun scripts/bench-compaction.ts --compactors pi-vcc --case-filter cache-bust-scope-growth --explain
+bun scripts/bench-compaction.ts --compactors pi-vcc --include-report --jsonl
 ```
 
 Use assertion mode when checking a selected compactor against the current benchmark gates:

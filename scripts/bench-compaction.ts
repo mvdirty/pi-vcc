@@ -2,6 +2,7 @@
 import { failedCacheGatesOf, failedGatesOf, offlineCompactors, runOfflineCompactionBenchmark } from "../bench/compaction/offline-runner";
 import { syntheticCompactionCases } from "../bench/compaction/synthetic-cases";
 import { loadRealSessionCases } from "../bench/compaction/real-sessions";
+import { formatCompactionReportCard } from "../src/core/compaction-report";
 
 const args = process.argv.slice(2);
 
@@ -20,6 +21,7 @@ const realLimitRaw = argValue("--real-limit");
 const realLimit = realLimitRaw ? Number.parseInt(realLimitRaw, 10) : undefined;
 const caseFilter = argValue("--case-filter");
 const includeDiagnostics = hasFlag("--show-layer-diff");
+const includeReports = hasFlag("--include-report") || hasFlag("--explain");
 
 const selected = argValue("--compactors")
   ?.split(",")
@@ -46,7 +48,7 @@ const filteredCases = caseFilter
   ? cases.filter((testCase) => testCase.id.includes(caseFilter) || testCase.description.includes(caseFilter))
   : cases;
 
-const result = runOfflineCompactionBenchmark({ compactors, cases: filteredCases, includeDiagnostics });
+const result = runOfflineCompactionBenchmark({ compactors, cases: filteredCases, includeDiagnostics, includeReports });
 const failures = result.cycles
   .map((cycle) => ({ cycle, gates: failedGatesOf(cycle) }))
   .filter((entry) => entry.gates.length > 0);
@@ -54,7 +56,18 @@ const cacheFailures = result.cycles
   .map((cycle) => ({ cycle, gates: failedCacheGatesOf(cycle) }))
   .filter((entry) => entry.gates.length > 0);
 
-if (hasFlag("--jsonl")) {
+if (hasFlag("--explain")) {
+  for (const cycle of result.cycles) {
+    console.log(`## ${cycle.caseId} / ${cycle.compactor} / cycle ${cycle.cycle}`);
+    console.log(`compactionPoint=${cycle.compactionPoint} firstChangedPromptLayer=${cycle.firstChangedPromptLayer ?? "none"} stablePrefixTokens=${cycle.stablePrefixTokens ?? "n/a"}`);
+    if (cycle.compactionReport) {
+      console.log(formatCompactionReportCard(cycle.compactionReport, { expanded: true }));
+    } else {
+      console.log("No compaction report available for this compactor.");
+    }
+    console.log("");
+  }
+} else if (hasFlag("--jsonl")) {
   for (const cycle of result.cycles) {
     console.log(JSON.stringify(cycle));
   }

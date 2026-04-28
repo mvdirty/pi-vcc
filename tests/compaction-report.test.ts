@@ -83,5 +83,6 @@ describe("compaction report", () => {
     expect(expanded).toContain("Sanity check");
     expect(expanded).toContain("Deep dive");
     expect(expanded).toContain("compaction.details.report");
+    expect(expanded).toContain("/pi-vcc-report");
   });
 });
