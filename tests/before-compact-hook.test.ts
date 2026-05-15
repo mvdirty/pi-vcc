@@ -88,14 +88,17 @@ describe("registerBeforeCompactHook: cancel paths", () => {
     expect(notifyCalls[0].msg).toContain("Too few messages");
   });
 
-  test("/pi-vcc with no user message cancels with no_user_message reason", () => {
+  test("/pi-vcc with no user message compacts all instead of cancelling", () => {
     setConfig({ debug: false, overrideDefaultCompaction: false });
     const { pi, invoke, notifyCalls } = createMockPi();
     registerBeforeCompactHook(pi);
 
     const entries = [msg("m1", "assistant"), msg("m2", "assistant"), msg("m3", "assistant")];
-    expect(invoke(makeEvent(entries, PI_VCC_COMPACT_INSTRUCTION))).toEqual({ cancel: true });
-    expect(notifyCalls[0].msg).toContain("no user message");
+    const result = invoke(makeEvent(entries, PI_VCC_COMPACT_INSTRUCTION));
+    // No longer cancels — compacts all to recover from context overflow
+    expect(result.cancel).toBeUndefined();
+    expect(result.compaction).toBeDefined();
+    expect(result.compaction.firstKeptEntryId).toBe("");
   });
 
   test("/compact with override=true cancels and notifies (NEW: was silent before)", () => {
@@ -119,23 +122,22 @@ describe("registerBeforeCompactHook: cancel paths", () => {
     expect(notifyCalls).toHaveLength(0);
   });
 
-  test("debug:true writes metrics-only snapshot with no content leakage", () => {
+  test("debug:true writes metrics-only snapshot on cancel with no content leakage", () => {
     setConfig({ debug: true, overrideDefaultCompaction: false });
     const { pi, invoke } = createMockPi();
     registerBeforeCompactHook(pi);
 
+    // Use too_few_live_messages cancel path to test content leakage
     const entries = [
-      msg("m1", "assistant", "SECRET_TOKEN_abc123"),
+      msg("m1", "user", "SECRET_TOKEN_abc123"),
       msg("m2", "assistant", "sensitive response"),
-      msg("m3", "assistant", "more text"),
     ];
     expect(invoke(makeEvent(entries, PI_VCC_COMPACT_INSTRUCTION))).toEqual({ cancel: true });
 
     expect(existsSync(DEBUG_PATH)).toBe(true);
     const snapshot = JSON.parse(readFileSync(DEBUG_PATH, "utf-8"));
     expect(snapshot.cancelled).toBe(true);
-    expect(snapshot.reason).toBe("no_user_message");
-    expect(snapshot.isPiVcc).toBe(true);
+    expect(snapshot.reason).toBe("too_few_live_messages");
 
     // No content leakage
     const serialized = JSON.stringify(snapshot);

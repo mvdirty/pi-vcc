@@ -51,8 +51,7 @@ interface EntryWithMessage {
 
 export type OwnCutCancelReason =
   | "no_live_messages"
-  | "too_few_live_messages"
-  | "no_user_message";
+  | "too_few_live_messages";
 
 export type OwnCutResult =
   | { ok: true; messages: any[]; firstKeptEntryId: string; compactAll: boolean }
@@ -110,11 +109,13 @@ export function buildOwnCut(branchEntries: any[]): OwnCutResult {
 
   if (cutIdx <= 0) {
     // Single user prompt scenario (or no user at all).
-    // If there's at least one user message, compact EVERYTHING and keep no tail.
+    // Compact EVERYTHING and keep no tail. This handles both:
+    //  - Single user prompt at index 0: compact all, fresh start after summary
+    //  - No user message at all (e.g., long assistant/tool chain): still compact
+    //    to recover from context overflow rather than cancelling and leaving
+    //    the session unrecoverable.
     // firstKeptEntryId="" is a sentinel: pi-core's buildSessionContext won't match it
     // (so 0 kept from pre-compaction), and next buildOwnCut triggers orphan recovery.
-    const hasUser = liveMessages.some((m) => m.message.role === "user");
-    if (!hasUser) return { ok: false, reason: "no_user_message" };
     return {
       ok: true,
       messages: liveMessages.map((e) => e.message),
@@ -134,7 +135,6 @@ export function buildOwnCut(branchEntries: any[]): OwnCutResult {
 const REASON_MESSAGES: Record<OwnCutCancelReason, string> = {
   no_live_messages: "pi-vcc: Nothing to compact (no live messages)",
   too_few_live_messages: "pi-vcc: Too few messages to compact",
-  no_user_message: "pi-vcc: Cannot compact — no user message found",
 };
 
 export const registerBeforeCompactHook = (pi: ExtensionAPI) => {

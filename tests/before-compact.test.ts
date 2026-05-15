@@ -91,15 +91,20 @@ describe("buildOwnCut", () => {
     expect(r.messages).toHaveLength(6);
   });
 
-  test("no_user_message when no user role at all", () => {
+  test("no user message: compact-all instead of cancelling", () => {
+    // When there are enough live messages but none are from the user
+    // (e.g., long assistant/tool chain), compact all rather than
+    // cancelling and leaving the session unrecoverable.
     const r = buildOwnCut([
       msg("m1", "assistant", "a"),
       msg("m2", "assistant", "b"),
       msg("m3", "assistant", "c"),
     ]);
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.reason).toBe("no_user_message");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.compactAll).toBe(true);
+    expect(r.firstKeptEntryId).toBe("");
+    expect(r.messages).toHaveLength(3);
   });
 
   test("compact-all then more chat: orphan recovery + normal cut", () => {
