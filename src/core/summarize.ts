@@ -145,7 +145,7 @@ export const compile = (input: CompileInput): string => {
     : undefined;
   const merged = prev ? mergePrevious(prev, fresh) : fresh;
   if (!merged) return "";
-  return wrapLongLines(merged) + SEPARATOR + RECALL_NOTE;
+  return wrapLongLines(merged + SEPARATOR + RECALL_NOTE);
 };
 
 const stripRecallNote = (text: string): string => {

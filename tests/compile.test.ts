@@ -77,4 +77,13 @@ describe("compile", () => {
     expect(r).toContain("earlier lines omitted");
     expect(r).toContain("latest");
   });
+
+  it("wraps final output including recall note", () => {
+    const r = compile({
+      messages: [userMsg("check final summary wrapping")],
+    });
+    const maxLineLength = Math.max(...r.split("\n").map((line) => line.length));
+    expect(r).toContain("vcc_recall");
+    expect(maxLineLength).toBeLessThanOrEqual(120);
+  });
 });
