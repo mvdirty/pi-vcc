@@ -15,11 +15,17 @@ export interface CompactionStats {
 
 let lastStats: CompactionStats | null = null;
 let lastCompactWasPiVcc = false;
+let pendingFollowUpPrompt: string | null = null;
 export const getLastCompactionStats = () => lastStats;
 
 const formatTokens = (n: number): string => {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
+};
+
+const normalizeCustomInstructions = (customInstructions?: string): string | null => {
+  const trimmed = customInstructions?.trim();
+  return trimmed ? trimmed : null;
 };
 
 const dbg = (settings: PiVccSettings, data: Record<string, unknown>) => {
@@ -145,6 +151,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     // Always handle explicit /pi-vcc marker.
     // Otherwise, only handle when user opted in via settings.
     const isPiVcc = customInstructions === PI_VCC_COMPACT_INSTRUCTION;
+    const followUpPrompt = isPiVcc ? null : normalizeCustomInstructions(customInstructions);
     if (!isPiVcc && !settings.overrideDefaultCompaction) return;
 
     const ownCut = buildOwnCut(branchEntries as any[]);
@@ -175,6 +182,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       }
       const userIndices = liveRoles.reduce<number[]>((acc, r, i) => (r === "user" ? (acc.push(i), acc) : acc), []);
 
+      pendingFollowUpPrompt = null;
       dbg(settings, {
         cancelled: true,
         reason: ownCut.reason,
@@ -213,6 +221,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       return { cancel: true };
     }
 
+    pendingFollowUpPrompt = followUpPrompt;
     const agentMessages = ownCut.messages;
     const firstKeptEntryId = ownCut.firstKeptEntryId;
     const messages = convertToLlm(agentMessages);
@@ -297,11 +306,18 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
 
   // Fire success toast for /compact path only (delayed to let UI settle).
   // /pi-vcc path uses its own onComplete callback in the command handler.
-  pi.on("session_compact", (event, ctx) => {
+  pi.on("session_compact", async (event, ctx) => {
     if (!event.fromExtension) return;
+    const followUpPrompt = pendingFollowUpPrompt;
+    pendingFollowUpPrompt = null;
     if (lastCompactWasPiVcc) return; // /pi-vcc handles its own toast via onComplete
     const stats = lastStats;
     if (!stats) return;
+    if (followUpPrompt) {
+      try {
+        await pi.sendUserMessage(followUpPrompt);
+      } catch {}
+    }
     setTimeout(() => {
       try {
         ctx?.ui?.notify?.(

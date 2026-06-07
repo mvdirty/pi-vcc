@@ -9,7 +9,8 @@ const formatTokens = (n: number): string => {
 export const registerPiVccCommand = (pi: ExtensionAPI) => {
   pi.registerCommand("pi-vcc", {
     description: "Compact conversation with pi-vcc structured summary",
-    handler: async (_args, ctx) => {
+    handler: async (args: string, ctx) => {
+      const followUpPrompt = args.trim();
       ctx.compact({
         customInstructions: PI_VCC_COMPACT_INSTRUCTION,
         onComplete: () => {
@@ -22,6 +23,7 @@ export const registerPiVccCommand = (pi: ExtensionAPI) => {
           } else {
             ctx.ui.notify("Compacted with pi-vcc", "info");
           }
+          if (followUpPrompt) pi.sendUserMessage(followUpPrompt);
         },
         onError: (err) => {
           if (err.message === "Compaction cancelled" || err.message === "Already compacted") {
