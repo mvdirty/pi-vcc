@@ -308,9 +308,9 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
   // Fire success toast for /compact path only (delayed to let UI settle).
   // /pi-vcc path uses its own onComplete callback in the command handler.
   pi.on("session_compact", async (event, ctx) => {
+    if (!event.fromExtension) return;
     const followUpPrompt = pendingFollowUpPrompt;
     pendingFollowUpPrompt = null;
-    if (!event.fromExtension) return;
     if (lastCompactWasPiVcc) return; // /pi-vcc handles its own toast via onComplete
     const stats = lastStats;
     if (!stats) return;
