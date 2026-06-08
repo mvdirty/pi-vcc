@@ -23,7 +23,11 @@ export const registerPiVccCommand = (pi: ExtensionAPI) => {
           } else {
             ctx.ui.notify("Compacted with pi-vcc", "info");
           }
-          if (followUpPrompt) pi.sendUserMessage(followUpPrompt);
+          if (followUpPrompt) {
+            try {
+              void Promise.resolve(pi.sendUserMessage(followUpPrompt)).catch(() => {});
+            } catch {}
+          }
         },
         onError: (err) => {
           if (err.message === "Compaction cancelled" || err.message === "Already compacted") {

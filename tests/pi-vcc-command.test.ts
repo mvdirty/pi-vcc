@@ -8,7 +8,7 @@ type CompactOptions = {
   onError?: (err: Error) => void;
 };
 
-function createHarness() {
+function createHarness(sendUserMessage?: (content: string | unknown[]) => unknown) {
   let handler: ((args: string, ctx: any) => Promise<void>) | undefined;
   const compactCalls: CompactOptions[] = [];
   const notifyCalls: Array<{ msg: string; level: string }> = [];
@@ -19,9 +19,9 @@ function createHarness() {
       expect(name).toBe("pi-vcc");
       handler = command.handler;
     },
-    sendUserMessage: (content: string | unknown[]) => {
+    sendUserMessage: sendUserMessage ?? ((content: string | unknown[]) => {
       userMessages.push(content);
-    },
+    }),
   } as any;
 
   const ctx = {
@@ -64,6 +64,15 @@ describe("registerPiVccCommand", () => {
     compactCalls[0].onComplete?.();
 
     expect(userMessages).toEqual(["continue"]);
+  });
+
+  test("handles rejected follow-up send without throwing", async () => {
+    const { invoke, compactCalls } = createHarness(() => Promise.reject(new Error("send failed")));
+
+    await invoke("continue");
+
+    expect(() => compactCalls[0].onComplete?.()).not.toThrow();
+    await Promise.resolve();
   });
 
   test("skips follow-up when trailing prompt is empty", async () => {
