@@ -208,9 +208,23 @@ describe("registerBeforeCompactHook: compact-all path", () => {
       keptUserTurns: 0,
       totalUserTurns: 2,
       requestedKeepUserTurns: 2,
+      keepUserTurnsExplicit: true,
       keepFallbackToCompactAll: true,
       keptTokensEst: 10,
     })).toContain("tail kept 0/2 user turns; requested keep:2, compact-all fallback");
+  });
+
+  test("formatCompactionStats avoids requested keep wording for default compact-all fallback", () => {
+    expect(formatCompactionStats({
+      summarized: 2,
+      kept: 4,
+      keptUserTurns: 0,
+      totalUserTurns: 1,
+      requestedKeepUserTurns: 1,
+      keepUserTurnsExplicit: false,
+      keepFallbackToCompactAll: true,
+      keptTokensEst: 10,
+    })).toContain("tail kept 0/1 user turns; compact-all fallback");
   });
 
   test("/pi-vcc keep instruction changes firstKeptEntryId and stats", () => {

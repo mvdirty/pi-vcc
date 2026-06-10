@@ -13,6 +13,7 @@ export interface CompactionStats {
   keptUserTurns: number;
   totalUserTurns: number;
   requestedKeepUserTurns: number;
+  keepUserTurnsExplicit: boolean;
   keepFallbackToCompactAll: boolean;
   keptTokensEst: number;
 }
@@ -28,9 +29,11 @@ const formatTokens = (n: number): string => {
 };
 
 export const formatCompactionStats = (stats: CompactionStats): string => {
-  const fallbackNote = stats.keepFallbackToCompactAll && stats.requestedKeepUserTurns > 0
-    ? `; requested keep:${stats.requestedKeepUserTurns}, compact-all fallback`
-    : '';
+  const fallbackNote = stats.keepFallbackToCompactAll
+    ? stats.keepUserTurnsExplicit
+      ? `; requested keep:${stats.requestedKeepUserTurns}, compact-all fallback`
+      : "; compact-all fallback"
+    : "";
   return `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.keptUserTurns}/${stats.totalUserTurns} user turns${fallbackNote} (${stats.kept} messages, ~${formatTokens(stats.keptTokensEst)} tok).`;
 };
 
@@ -39,19 +42,20 @@ const normalizeCustomInstructions = (customInstructions?: string): string | null
   return trimmed ? trimmed : null;
 };
 
-const parsePiVccInstructions = (customInstructions?: string): { isPiVcc: boolean; keepUserTurns: number } => {
+const parsePiVccInstructions = (customInstructions?: string): { isPiVcc: boolean; keepUserTurns: number; keepUserTurnsExplicit: boolean } => {
   const trimmed = customInstructions?.trim();
-  if (trimmed === PI_VCC_COMPACT_INSTRUCTION) return { isPiVcc: true, keepUserTurns: 1 };
+  if (trimmed === PI_VCC_COMPACT_INSTRUCTION) return { isPiVcc: true, keepUserTurns: 1, keepUserTurnsExplicit: false };
 
   const keepPrefix = `${PI_VCC_COMPACT_INSTRUCTION} `;
-  if (!trimmed?.startsWith(keepPrefix)) return { isPiVcc: false, keepUserTurns: 1 };
+  if (!trimmed?.startsWith(keepPrefix)) return { isPiVcc: false, keepUserTurns: 1, keepUserTurnsExplicit: false };
 
   const match = trimmed.slice(keepPrefix.length).match(/^keep:(\d+)$/);
-  if (!match) return { isPiVcc: false, keepUserTurns: 1 };
+  if (!match) return { isPiVcc: false, keepUserTurns: 1, keepUserTurnsExplicit: false };
   const parsed = Number(match[1]);
   return {
     isPiVcc: true,
     keepUserTurns: Number.isSafeInteger(parsed) ? parsed : Number.MAX_SAFE_INTEGER,
+    keepUserTurnsExplicit: true,
   };
 };
 
@@ -202,7 +206,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
 
     // Always handle explicit /pi-vcc marker.
     // Otherwise, only handle when user opted in via settings.
-    const { isPiVcc, keepUserTurns } = parsePiVccInstructions(customInstructions);
+    const { isPiVcc, keepUserTurns, keepUserTurnsExplicit } = parsePiVccInstructions(customInstructions);
     const followUpPrompt = isPiVcc ? null : normalizeCustomInstructions(customInstructions);
     pendingFollowUpPrompt = null;
     if (!isPiVcc && !settings.overrideDefaultCompaction) return;
@@ -301,6 +305,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       keptUserTurns: ownCut.keptUserTurns,
       totalUserTurns: ownCut.totalUserTurns,
       requestedKeepUserTurns: ownCut.requestedKeepUserTurns,
+      keepUserTurnsExplicit,
       keepFallbackToCompactAll: ownCut.keepFallbackToCompactAll,
       keptTokensEst: Math.round(keptChars / 4),
     };
