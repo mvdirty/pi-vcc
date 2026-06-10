@@ -1,25 +1,53 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getLastCompactionStats, PI_VCC_COMPACT_INSTRUCTION } from "../hooks/before-compact";
+import { formatCompactionStats, getLastCompactionStats, PI_VCC_COMPACT_INSTRUCTION } from "../hooks/before-compact";
 
-const formatTokens = (n: number): string => {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
+const KEEP_TOKEN_RE = /^keep:(\d+)$/;
+
+const parseKeepUserTurns = (raw: string): number => {
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : Number.MAX_SAFE_INTEGER;
+};
+
+const parsePiVccArgs = (args: string): { followUpPrompt: string; keepUserTurns: number | null } => {
+  const trimmed = args.trim();
+  if (!trimmed) return { followUpPrompt: "", keepUserTurns: null };
+
+  const startMatch = trimmed.match(/^keep:(\d+)(?:\s+|$)([\s\S]*)$/);
+  if (startMatch) {
+    return {
+      followUpPrompt: startMatch[2].trim(),
+      keepUserTurns: parseKeepUserTurns(startMatch[1]),
+    };
+  }
+
+  const parts = trimmed.split(/\s+/);
+  const endMatch = parts[parts.length - 1].match(KEEP_TOKEN_RE);
+  if (endMatch) {
+    return {
+      followUpPrompt: trimmed.slice(0, trimmed.length - parts[parts.length - 1].length).trim(),
+      keepUserTurns: parseKeepUserTurns(endMatch[1]),
+    };
+  }
+
+  return { followUpPrompt: trimmed, keepUserTurns: null };
+};
+
+const buildCustomInstructions = (keepUserTurns: number | null): string => {
+  if (keepUserTurns == null) return PI_VCC_COMPACT_INSTRUCTION;
+  return `${PI_VCC_COMPACT_INSTRUCTION} keep:${keepUserTurns}`;
 };
 
 export const registerPiVccCommand = (pi: ExtensionAPI) => {
   pi.registerCommand("pi-vcc", {
     description: "Compact conversation with pi-vcc structured summary",
     handler: async (args: string, ctx) => {
-      const followUpPrompt = args.trim();
+      const { followUpPrompt, keepUserTurns } = parsePiVccArgs(args);
       ctx.compact({
-        customInstructions: PI_VCC_COMPACT_INSTRUCTION,
+        customInstructions: buildCustomInstructions(keepUserTurns),
         onComplete: () => {
           const stats = getLastCompactionStats();
           if (stats) {
-            ctx.ui.notify(
-              `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.kept} (~${formatTokens(stats.keptTokensEst)} tok).`,
-              "info",
-            );
+            ctx.ui.notify(formatCompactionStats(stats), "info");
           } else {
             ctx.ui.notify("Compacted with pi-vcc", "info");
           }

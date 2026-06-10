@@ -142,4 +142,92 @@ describe("buildOwnCut", () => {
     expect(r.compactAll).toBe(true);
     expect(r.firstKeptEntryId).toBe("");
   });
+
+  test("keep:2 keeps the last two user turns", () => {
+    const r = buildOwnCut([
+      msg("u1", "user", "one"),
+      msg("a1", "assistant", "reply one"),
+      msg("u2", "user", "two"),
+      msg("a2", "assistant", "reply two"),
+      msg("u3", "user", "three"),
+      msg("a3", "assistant", "reply three"),
+    ], 2);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.compactAll).toBe(false);
+    expect(r.firstKeptEntryId).toBe("u2");
+    expect(r.messages).toHaveLength(2);
+    expect(r.keptUserTurns).toBe(2);
+    expect(r.totalUserTurns).toBe(3);
+  });
+
+  test("keep:2 falls back to compact-all when the boundary would start at the first user", () => {
+    const r = buildOwnCut([
+      msg("u1", "user", "one"),
+      msg("a1", "assistant", "reply one"),
+      msg("u2", "user", "two"),
+      msg("a2", "assistant", "reply two"),
+    ], 2);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.compactAll).toBe(true);
+    expect(r.firstKeptEntryId).toBe("");
+    expect(r.messages).toHaveLength(4);
+    expect(r.keptUserTurns).toBe(0);
+    expect(r.totalUserTurns).toBe(2);
+    expect(r.requestedKeepUserTurns).toBe(2);
+    expect(r.keepFallbackToCompactAll).toBe(true);
+  });
+
+  test("keep:0 compacts all and keeps no tail", () => {
+    const r = buildOwnCut([
+      msg("u1", "user", "one"),
+      msg("a1", "assistant", "reply one"),
+      msg("u2", "user", "two"),
+      msg("a2", "assistant", "reply two"),
+    ], 0);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.compactAll).toBe(true);
+    expect(r.firstKeptEntryId).toBe("");
+    expect(r.messages).toHaveLength(4);
+    expect(r.keptUserTurns).toBe(0);
+    expect(r.totalUserTurns).toBe(2);
+  });
+
+  test("keep larger than available user turns compacts all", () => {
+    const r = buildOwnCut([
+      msg("u1", "user", "one"),
+      msg("a1", "assistant", "reply one"),
+      msg("u2", "user", "two"),
+      msg("a2", "assistant", "reply two"),
+    ], 3);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.compactAll).toBe(true);
+    expect(r.firstKeptEntryId).toBe("");
+    expect(r.messages).toHaveLength(4);
+    expect(r.keptUserTurns).toBe(0);
+    expect(r.totalUserTurns).toBe(2);
+  });
+
+  test("orphan recovery respects keep user turns", () => {
+    const r = buildOwnCut([
+      msg("old1", "user", "old"),
+      comp("c1", ""),
+      msg("u1", "user", "new1"),
+      msg("a1", "assistant", "reply1"),
+      msg("u2", "user", "new2"),
+      msg("a2", "assistant", "reply2"),
+      msg("u3", "user", "new3"),
+      msg("a3", "assistant", "reply3"),
+    ], 2);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.compactAll).toBe(false);
+    expect(r.firstKeptEntryId).toBe("u2");
+    expect(r.messages).toHaveLength(2);
+    expect(r.keptUserTurns).toBe(2);
+    expect(r.totalUserTurns).toBe(3);
+  });
 });
