@@ -21,7 +21,7 @@ const parsePiVccArgs = (args: string): { followUpPrompt: string; keepUserTurns: 
   }
 
   const parts = trimmed.split(/\s+/);
-  const endMatch = parts.length > 1 ? parts[parts.length - 1].match(KEEP_TOKEN_RE) : null;
+  const endMatch = parts[parts.length - 1].match(KEEP_TOKEN_RE);
   if (endMatch) {
     return {
       followUpPrompt: trimmed.slice(0, trimmed.length - parts[parts.length - 1].length).trim(),

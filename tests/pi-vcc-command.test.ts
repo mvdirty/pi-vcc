@@ -75,6 +75,16 @@ describe("registerPiVccCommand", () => {
     expect(userMessages).toEqual(["continue"]);
   });
 
+  test("parses a lone keep token without sending a follow-up prompt", async () => {
+    const { invoke, compactCalls, userMessages } = createHarness();
+
+    await invoke("keep:4");
+
+    expect(compactCalls[0].customInstructions).toBe(`${PI_VCC_COMPACT_INSTRUCTION} keep:4`);
+    compactCalls[0].onComplete?.();
+    expect(userMessages).toHaveLength(0);
+  });
+
   test("sends trailing prompt as a user message after successful compaction", async () => {
     const { invoke, compactCalls, userMessages } = createHarness();
 

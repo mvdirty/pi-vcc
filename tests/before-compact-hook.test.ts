@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } fr
 import { existsSync, unlinkSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { registerBeforeCompactHook, PI_VCC_COMPACT_INSTRUCTION, getLastCompactionStats } from "../src/hooks/before-compact";
+import { registerBeforeCompactHook, PI_VCC_COMPACT_INSTRUCTION, getLastCompactionStats, formatCompactionStats } from "../src/hooks/before-compact";
 
 let tmpDir: string;
 let CONFIG_PATH: string;
@@ -199,6 +199,18 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     await new Promise((resolve) => setTimeout(resolve, 550));
     expect(userMessages).toEqual(["continue"]);
     expect(notifyCalls.some((call) => call.msg.includes("tail kept 1/2 user turns (2 messages,"))).toBe(true);
+  });
+
+  test("formatCompactionStats surfaces compact-all fallback when keep cannot be honored", () => {
+    expect(formatCompactionStats({
+      summarized: 2,
+      kept: 4,
+      keptUserTurns: 0,
+      totalUserTurns: 2,
+      requestedKeepUserTurns: 2,
+      keepFallbackToCompactAll: true,
+      keptTokensEst: 10,
+    })).toContain("tail kept 0/2 user turns; requested keep:2, compact-all fallback");
   });
 
   test("/pi-vcc keep instruction changes firstKeptEntryId and stats", () => {

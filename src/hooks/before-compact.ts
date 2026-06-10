@@ -12,6 +12,8 @@ export interface CompactionStats {
   kept: number;
   keptUserTurns: number;
   totalUserTurns: number;
+  requestedKeepUserTurns: number;
+  keepFallbackToCompactAll: boolean;
   keptTokensEst: number;
 }
 
@@ -25,8 +27,12 @@ const formatTokens = (n: number): string => {
   return String(n);
 };
 
-export const formatCompactionStats = (stats: CompactionStats): string =>
-  `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.keptUserTurns}/${stats.totalUserTurns} user turns (${stats.kept} messages, ~${formatTokens(stats.keptTokensEst)} tok).`;
+export const formatCompactionStats = (stats: CompactionStats): string => {
+  const fallbackNote = stats.keepFallbackToCompactAll && stats.requestedKeepUserTurns > 0
+    ? `; requested keep:${stats.requestedKeepUserTurns}, compact-all fallback`
+    : '';
+  return `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.keptUserTurns}/${stats.totalUserTurns} user turns${fallbackNote} (${stats.kept} messages, ~${formatTokens(stats.keptTokensEst)} tok).`;
+};
 
 const normalizeCustomInstructions = (customInstructions?: string): string | null => {
   const trimmed = customInstructions?.trim();
@@ -93,6 +99,8 @@ export type OwnCutResult =
       compactAll: boolean;
       keptUserTurns: number;
       totalUserTurns: number;
+      requestedKeepUserTurns: number;
+      keepFallbackToCompactAll: boolean;
     }
   | { ok: false; reason: OwnCutCancelReason };
 
@@ -145,16 +153,18 @@ export function buildOwnCut(branchEntries: any[], keepUserTurns = 1): OwnCutResu
     if (e.message.role === "user") acc.push(i);
     return acc;
   }, []);
-  const compactAll = () => ({
+  const compactAll = (keepFallbackToCompactAll: boolean) => ({
     ok: true as const,
     messages: liveMessages.map((e) => e.message),
     firstKeptEntryId: "",
     compactAll: true,
     keptUserTurns: 0,
     totalUserTurns: userIndices.length,
+    requestedKeepUserTurns: normalizedKeepUserTurns,
+    keepFallbackToCompactAll,
   });
 
-  if (normalizedKeepUserTurns <= 0) return compactAll();
+  if (normalizedKeepUserTurns <= 0) return compactAll(false);
 
   // Summarize all messages before the requested kept user-turn tail.
   const targetUserIdx = userIndices.length - normalizedKeepUserTurns;
@@ -165,7 +175,7 @@ export function buildOwnCut(branchEntries: any[], keepUserTurns = 1): OwnCutResu
     // or keep larger than available user turns), so compact EVERYTHING and keep no tail.
     // firstKeptEntryId="" is a sentinel: pi-core's buildSessionContext won't match it
     // (so 0 kept from pre-compaction), and next buildOwnCut triggers orphan recovery.
-    return compactAll();
+    return compactAll(true);
   }
 
   return {
@@ -175,6 +185,8 @@ export function buildOwnCut(branchEntries: any[], keepUserTurns = 1): OwnCutResu
     compactAll: false,
     keptUserTurns: userIndices.length - targetUserIdx,
     totalUserTurns: userIndices.length,
+    requestedKeepUserTurns: normalizedKeepUserTurns,
+    keepFallbackToCompactAll: false,
   };
 }
 
@@ -288,6 +300,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       kept: keptEntries.length,
       keptUserTurns: ownCut.keptUserTurns,
       totalUserTurns: ownCut.totalUserTurns,
+      requestedKeepUserTurns: ownCut.requestedKeepUserTurns,
+      keepFallbackToCompactAll: ownCut.keepFallbackToCompactAll,
       keptTokensEst: Math.round(keptChars / 4),
     };
 

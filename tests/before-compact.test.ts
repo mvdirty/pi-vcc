@@ -161,6 +161,24 @@ describe("buildOwnCut", () => {
     expect(r.totalUserTurns).toBe(3);
   });
 
+  test("keep:2 falls back to compact-all when the boundary would start at the first user", () => {
+    const r = buildOwnCut([
+      msg("u1", "user", "one"),
+      msg("a1", "assistant", "reply one"),
+      msg("u2", "user", "two"),
+      msg("a2", "assistant", "reply two"),
+    ], 2);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.compactAll).toBe(true);
+    expect(r.firstKeptEntryId).toBe("");
+    expect(r.messages).toHaveLength(4);
+    expect(r.keptUserTurns).toBe(0);
+    expect(r.totalUserTurns).toBe(2);
+    expect(r.requestedKeepUserTurns).toBe(2);
+    expect(r.keepFallbackToCompactAll).toBe(true);
+  });
+
   test("keep:0 compacts all and keeps no tail", () => {
     const r = buildOwnCut([
       msg("u1", "user", "one"),
