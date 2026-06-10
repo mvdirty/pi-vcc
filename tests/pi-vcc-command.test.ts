@@ -55,6 +55,26 @@ describe("registerPiVccCommand", () => {
     expect(compactCalls[0].customInstructions).toBe(PI_VCC_COMPACT_INSTRUCTION);
   });
 
+  test("parses keep token at the start of args and strips it from the prompt", async () => {
+    const { invoke, compactCalls, userMessages } = createHarness();
+
+    await invoke("keep:3   continue  ");
+
+    expect(compactCalls[0].customInstructions).toBe(`${PI_VCC_COMPACT_INSTRUCTION} keep:3`);
+    compactCalls[0].onComplete?.();
+    expect(userMessages).toEqual(["continue"]);
+  });
+
+  test("parses keep token at the end of args and strips it from the prompt", async () => {
+    const { invoke, compactCalls, userMessages } = createHarness();
+
+    await invoke("  continue   keep:2");
+
+    expect(compactCalls[0].customInstructions).toBe(`${PI_VCC_COMPACT_INSTRUCTION} keep:2`);
+    compactCalls[0].onComplete?.();
+    expect(userMessages).toEqual(["continue"]);
+  });
+
   test("sends trailing prompt as a user message after successful compaction", async () => {
     const { invoke, compactCalls, userMessages } = createHarness();
 
@@ -92,5 +112,13 @@ describe("registerPiVccCommand", () => {
 
     expect(userMessages).toHaveLength(0);
     expect(notifyCalls).toEqual([{ msg: "Nothing to compact", level: "warning" }]);
+  });
+
+  test("normalizes huge keep tokens to a safe integer instruction", async () => {
+    const { invoke, compactCalls } = createHarness();
+
+    await invoke("keep:999999999999999999999 continue");
+
+    expect(compactCalls[0].customInstructions).toBe(`${PI_VCC_COMPACT_INSTRUCTION} keep:${Number.MAX_SAFE_INTEGER}`);
   });
 });

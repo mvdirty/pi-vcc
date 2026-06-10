@@ -74,6 +74,9 @@ pi -e https://github.com/sting8k/pi-vcc
 Once installed, pi-vcc registers a `session_before_compact` hook.
 
 - Run `/pi-vcc` to trigger pi-vcc compaction manually.
+- Optional keep syntax: `/pi-vcc keep:3 <prompt>` or `/pi-vcc <prompt> keep:3`.
+  - `keep:1` matches the default behavior.
+  - `keep:0` compacts everything and keeps no tail.
 - By default, `/compact` and auto-threshold compactions still go through pi core (LLM-based). Set `overrideDefaultCompaction: true` in the config to let pi-vcc handle all compaction paths.
 - To search older active-lineage history after compaction, use `vcc_recall`.
 - To intentionally search across all lineages, pass `scope:"all"` to `vcc_recall` or run `/pi-vcc-recall <query> scope:all`.
@@ -82,7 +85,7 @@ Once installed, pi-vcc registers a `session_before_compact` hook.
 
 ### How compaction works
 
-Pi splits the conversation at the **last user message**. Everything after — the **kept tail** — stays intact and untouched. pi-vcc only summarizes the older portion before that cut point.
+Pi splits the conversation at the **last user message** by default. Everything after — the **kept tail** — stays intact and untouched. With `keep:N`, pi-vcc keeps the last `N` user turns in that tail and summarizes everything before the cut point. If `keep:0` is requested, it compacts everything and keeps no tail.
 
 ### Compacted message structure
 
@@ -186,10 +189,11 @@ Typical workflow: **search → find relevant entry indices → expand those indi
 
 1. **Normalize** — raw Pi messages → uniform blocks (user, assistant, tool_call, tool_result, thinking)
 2. **Filter noise** — strip system messages, empty blocks
-3. **Build sections** — extract goal, file paths, blockers, preferences
-4. **Brief transcript** — chronological conversation flow, tool calls collapsed to one-liners, text truncated
-5. **Format** — render into bracketed sections + transcript
-6. **Merge** — if previous summary exists: sticky sections merge, volatile sections replace, transcript rolls
+3. **Build cut** — keep the requested tail of user turns; compact-all uses the `firstKeptEntryId: ""` sentinel
+4. **Build sections** — extract goal, file paths, blockers, preferences
+5. **Brief transcript** — chronological conversation flow, tool calls collapsed to one-liners, text truncated
+6. **Format** — render into bracketed sections + transcript
+7. **Merge** — if previous summary exists: sticky sections merge, volatile sections replace, transcript rolls
 
 ## Config
 

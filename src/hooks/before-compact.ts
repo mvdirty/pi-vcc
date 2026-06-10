@@ -10,6 +10,8 @@ export const PI_VCC_COMPACT_INSTRUCTION = "__pi_vcc__";
 export interface CompactionStats {
   summarized: number;
   kept: number;
+  keptUserTurns: number;
+  totalUserTurns: number;
   keptTokensEst: number;
 }
 
@@ -23,9 +25,33 @@ const formatTokens = (n: number): string => {
   return String(n);
 };
 
+export const formatCompactionStats = (stats: CompactionStats): string =>
+  `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.keptUserTurns}/${stats.totalUserTurns} user turns (${stats.kept} messages, ~${formatTokens(stats.keptTokensEst)} tok).`;
+
 const normalizeCustomInstructions = (customInstructions?: string): string | null => {
   const trimmed = customInstructions?.trim();
   return trimmed ? trimmed : null;
+};
+
+const parsePiVccInstructions = (customInstructions?: string): { isPiVcc: boolean; keepUserTurns: number } => {
+  const trimmed = customInstructions?.trim();
+  if (trimmed === PI_VCC_COMPACT_INSTRUCTION) return { isPiVcc: true, keepUserTurns: 1 };
+
+  const keepPrefix = `${PI_VCC_COMPACT_INSTRUCTION} `;
+  if (!trimmed?.startsWith(keepPrefix)) return { isPiVcc: false, keepUserTurns: 1 };
+
+  const match = trimmed.slice(keepPrefix.length).match(/^keep:(\d+)$/);
+  if (!match) return { isPiVcc: false, keepUserTurns: 1 };
+  const parsed = Number(match[1]);
+  return {
+    isPiVcc: true,
+    keepUserTurns: Number.isSafeInteger(parsed) ? parsed : Number.MAX_SAFE_INTEGER,
+  };
+};
+
+const normalizeKeepUserTurns = (keepUserTurns: number): number => {
+  if (!Number.isFinite(keepUserTurns)) return 0;
+  return Math.max(0, Math.floor(keepUserTurns));
 };
 
 const dbg = (settings: PiVccSettings, data: Record<string, unknown>) => {
@@ -60,10 +86,18 @@ export type OwnCutCancelReason =
   | "too_few_live_messages";
 
 export type OwnCutResult =
-  | { ok: true; messages: any[]; firstKeptEntryId: string; compactAll: boolean }
+  | {
+      ok: true;
+      messages: any[];
+      firstKeptEntryId: string;
+      compactAll: boolean;
+      keptUserTurns: number;
+      totalUserTurns: number;
+    }
   | { ok: false; reason: OwnCutCancelReason };
 
-export function buildOwnCut(branchEntries: any[]): OwnCutResult {
+export function buildOwnCut(branchEntries: any[], keepUserTurns = 1): OwnCutResult {
+  const normalizedKeepUserTurns = normalizeKeepUserTurns(keepUserTurns);
   // Find the last compaction entry and its firstKeptEntryId
   let lastCompactionIdx = -1;
   let lastKeptId: string | undefined;
@@ -107,27 +141,31 @@ export function buildOwnCut(branchEntries: any[]): OwnCutResult {
   if (liveMessages.length === 0) return { ok: false, reason: "no_live_messages" };
   if (liveMessages.length <= 2) return { ok: false, reason: "too_few_live_messages" };
 
-  // Summarize all messages, keep only the last user message as context
-  let cutIdx = liveMessages.length - 1;
-  while (cutIdx > 0 && liveMessages[cutIdx].message.role !== "user") {
-    cutIdx--;
-  }
+  const userIndices = liveMessages.reduce<number[]>((acc, e, i) => {
+    if (e.message.role === "user") acc.push(i);
+    return acc;
+  }, []);
+  const compactAll = () => ({
+    ok: true as const,
+    messages: liveMessages.map((e) => e.message),
+    firstKeptEntryId: "",
+    compactAll: true,
+    keptUserTurns: 0,
+    totalUserTurns: userIndices.length,
+  });
+
+  if (normalizedKeepUserTurns <= 0) return compactAll();
+
+  // Summarize all messages before the requested kept user-turn tail.
+  const targetUserIdx = userIndices.length - normalizedKeepUserTurns;
+  const cutIdx = targetUserIdx >= 0 ? userIndices[targetUserIdx] : -1;
 
   if (cutIdx <= 0) {
-    // Single user prompt scenario (or no user at all).
-    // Compact EVERYTHING and keep no tail. This handles both:
-    //  - Single user prompt at index 0: compact all, fresh start after summary
-    //  - No user message at all (e.g., long assistant/tool chain): still compact
-    //    to recover from context overflow rather than cancelling and leaving
-    //    the session unrecoverable.
+    // Keep request cannot form a safe boundary (single user prompt, no user prompt,
+    // or keep larger than available user turns), so compact EVERYTHING and keep no tail.
     // firstKeptEntryId="" is a sentinel: pi-core's buildSessionContext won't match it
     // (so 0 kept from pre-compaction), and next buildOwnCut triggers orphan recovery.
-    return {
-      ok: true,
-      messages: liveMessages.map((e) => e.message),
-      firstKeptEntryId: "",
-      compactAll: true,
-    };
+    return compactAll();
   }
 
   return {
@@ -135,6 +173,8 @@ export function buildOwnCut(branchEntries: any[]): OwnCutResult {
     messages: liveMessages.slice(0, cutIdx).map((e) => e.message),
     firstKeptEntryId: liveMessages[cutIdx].entry.id,
     compactAll: false,
+    keptUserTurns: userIndices.length - targetUserIdx,
+    totalUserTurns: userIndices.length,
   };
 }
 
@@ -150,12 +190,12 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
 
     // Always handle explicit /pi-vcc marker.
     // Otherwise, only handle when user opted in via settings.
-    const isPiVcc = customInstructions === PI_VCC_COMPACT_INSTRUCTION;
+    const { isPiVcc, keepUserTurns } = parsePiVccInstructions(customInstructions);
     const followUpPrompt = isPiVcc ? null : normalizeCustomInstructions(customInstructions);
     pendingFollowUpPrompt = null;
     if (!isPiVcc && !settings.overrideDefaultCompaction) return;
 
-    const ownCut = buildOwnCut(branchEntries as any[]);
+    const ownCut = buildOwnCut(branchEntries as any[], keepUserTurns);
     if (!ownCut.ok) {
       const lastComp = [...branchEntries].reverse().find((e: any) => e.type === "compaction");
       const lastCompIdx = lastComp ? (branchEntries as any[]).indexOf(lastComp) : -1;
@@ -246,6 +286,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     lastStats = {
       summarized: agentMessages.length,
       kept: keptEntries.length,
+      keptUserTurns: ownCut.keptUserTurns,
+      totalUserTurns: ownCut.totalUserTurns,
       keptTokensEst: Math.round(keptChars / 4),
     };
 
@@ -322,7 +364,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     setTimeout(() => {
       try {
         ctx?.ui?.notify?.(
-          `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.kept} (~${formatTokens(stats.keptTokensEst)} tok).`,
+          formatCompactionStats(stats),
           "info",
         );
       } catch {}
