@@ -299,7 +299,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
 
   test("session_compact overflow retry does not send follow-up prompt", async () => {
     setConfig({ debug: false, overrideDefaultCompaction: true });
-    const { pi, invokeBefore, invokeCompact, userMessages } = createMockPi();
+    const { pi, invokeBefore, invokeCompact, userMessages, notifyCalls } = createMockPi();
     registerBeforeCompactHook(pi);
 
     const entries = [msg("m1", "user"), msg("m2", "assistant"), msg("m3", "user"), msg("m4", "assistant")];
@@ -308,6 +308,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     await new Promise((resolve) => setTimeout(resolve, 550));
 
     expect(userMessages).toEqual([]);
+    expect(notifyCalls).toEqual([]);
   });
 
   test("formatCompactionStats surfaces compact-all fallback when keep cannot be honored", () => {
@@ -359,6 +360,31 @@ describe("registerBeforeCompactHook: compact-all path", () => {
       keptUserTurns: 2,
       totalUserTurns: 3,
     });
+  });
+
+  test("/pi-vcc marker with trailing prompt does not leak marker as follow-up", async () => {
+    setConfig({ debug: false, overrideDefaultCompaction: true });
+    const { pi, invokeBefore, invokeCompact, userMessages } = createMockPi();
+    registerBeforeCompactHook(pi);
+    const entries = [
+      msg("u1", "user", "one"),
+      msg("a1", "assistant", "reply one"),
+      msg("u2", "user", "two"),
+      msg("a2", "assistant", "reply two"),
+      msg("u3", "user", "three"),
+      msg("a3", "assistant", "reply three"),
+    ];
+
+    const result = invokeBefore(makeEvent(entries, `${PI_VCC_COMPACT_INSTRUCTION} keep:2 continue`));
+    await invokeCompact({ type: "session_compact", fromExtension: true, reason: "manual", willRetry: false });
+    await new Promise((resolve) => setTimeout(resolve, 550));
+
+    expect(result.compaction.firstKeptEntryId).toBe("u2");
+    expect(getLastCompactionStats()).toMatchObject({
+      keptUserTurns: 2,
+      keepUserTurnsExplicit: true,
+    });
+    expect(userMessages).toEqual([]);
   });
 
   test("huge keep instruction compacts all safely", () => {

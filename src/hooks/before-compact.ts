@@ -63,14 +63,12 @@ const parseCompactionInstructions = (customInstructions?: string): {
   const keepPrefix = `${PI_VCC_COMPACT_INSTRUCTION} `;
   if (trimmed?.startsWith(keepPrefix)) {
     const parsed = parseKeepAndPrompt(trimmed.slice(keepPrefix.length));
-    if (parsed.keepUserTurnsExplicit && !parsed.followUpPrompt) {
-      return {
-        isPiVcc: true,
-        keepUserTurns: parsed.keepUserTurns ?? 1,
-        keepUserTurnsExplicit: true,
-        followUpPrompt: null,
-      };
-    }
+    return {
+      isPiVcc: true,
+      keepUserTurns: parsed.keepUserTurns ?? 1,
+      keepUserTurnsExplicit: parsed.keepUserTurnsExplicit,
+      followUpPrompt: null,
+    };
   }
 
   const parsed = parseKeepAndPrompt(customInstructions);
@@ -407,9 +405,10 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     const followUpPrompt = pendingFollowUpPrompt;
     pendingFollowUpPrompt = null;
     if (lastCompactWasPiVcc) return; // /pi-vcc handles its own toast via onComplete
+    if (reason === "overflow" || willRetry) return;
     const stats = lastStats;
     if (!stats) return;
-    if (followUpPrompt && reason !== "overflow" && !willRetry) {
+    if (followUpPrompt) {
       try {
         await pi.sendUserMessage(followUpPrompt);
       } catch {}
