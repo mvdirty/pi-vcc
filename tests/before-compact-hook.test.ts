@@ -248,6 +248,55 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     expect(notifyCalls.some((call) => call.msg.includes("tail kept 1/2 user turns (2 messages,"))).toBe(true);
   });
 
+  test("override=true + /compact keep prefix keeps requested turns and strips follow-up", async () => {
+    setConfig({ debug: false, overrideDefaultCompaction: true });
+    const { pi, invokeBefore, invokeCompact, userMessages } = createMockPi();
+    registerBeforeCompactHook(pi);
+
+    const entries = [
+      msg("m1", "user"), msg("m2", "assistant"),
+      msg("m3", "user"), msg("m4", "assistant"),
+      msg("m5", "user"), msg("m6", "assistant"),
+      msg("m7", "user"), msg("m8", "assistant"),
+    ];
+    const result = invokeBefore(makeEvent(entries, "keep:3 continue"));
+    await invokeCompact({ type: "session_compact", fromExtension: true });
+    await new Promise((resolve) => setTimeout(resolve, 550));
+
+    expect(result.compaction.firstKeptEntryId).toBe("m3");
+    expect(getLastCompactionStats()).toMatchObject({
+      keptUserTurns: 3,
+      totalUserTurns: 4,
+      requestedKeepUserTurns: 3,
+      keepUserTurnsExplicit: true,
+    });
+    expect(userMessages).toEqual(["continue"]);
+  });
+
+  test("override=true + /compact keep suffix keeps requested turns and strips follow-up", async () => {
+    setConfig({ debug: false, overrideDefaultCompaction: true });
+    const { pi, invokeBefore, invokeCompact, userMessages } = createMockPi();
+    registerBeforeCompactHook(pi);
+
+    const entries = [
+      msg("m1", "user"), msg("m2", "assistant"),
+      msg("m3", "user"), msg("m4", "assistant"),
+      msg("m5", "user"), msg("m6", "assistant"),
+    ];
+    const result = invokeBefore(makeEvent(entries, "continue keep:2"));
+    await invokeCompact({ type: "session_compact", fromExtension: true });
+    await new Promise((resolve) => setTimeout(resolve, 550));
+
+    expect(result.compaction.firstKeptEntryId).toBe("m3");
+    expect(getLastCompactionStats()).toMatchObject({
+      keptUserTurns: 2,
+      totalUserTurns: 3,
+      requestedKeepUserTurns: 2,
+      keepUserTurnsExplicit: true,
+    });
+    expect(userMessages).toEqual(["continue"]);
+  });
+
   test("session_compact overflow retry does not send follow-up prompt", async () => {
     setConfig({ debug: false, overrideDefaultCompaction: true });
     const { pi, invokeBefore, invokeCompact, userMessages } = createMockPi();

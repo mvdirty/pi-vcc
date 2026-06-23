@@ -2,11 +2,12 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import { writeFileSync } from "fs";
 import { compile } from "../core/summarize";
+import { parseKeepAndPrompt, PI_VCC_COMPACT_INSTRUCTION } from "../core/compact-args";
 import { loadSettings, type PiVccSettings } from "../core/settings";
 import type { PiVccCompactionDetails } from "../details";
 import type { CompactionReason } from "../types";
 
-export const PI_VCC_COMPACT_INSTRUCTION = "__pi_vcc__";
+export { PI_VCC_COMPACT_INSTRUCTION } from "../core/compact-args";
 
 export interface CompactionStats {
   summarized: number;
@@ -48,25 +49,36 @@ const readCompactionEventContext = (event: unknown): { reason?: CompactionReason
   return { reason, willRetry: raw.willRetry === true };
 };
 
-const normalizeCustomInstructions = (customInstructions?: string): string | null => {
+const parseCompactionInstructions = (customInstructions?: string): {
+  isPiVcc: boolean;
+  keepUserTurns: number;
+  keepUserTurnsExplicit: boolean;
+  followUpPrompt: string | null;
+} => {
   const trimmed = customInstructions?.trim();
-  return trimmed ? trimmed : null;
-};
-
-const parsePiVccInstructions = (customInstructions?: string): { isPiVcc: boolean; keepUserTurns: number; keepUserTurnsExplicit: boolean } => {
-  const trimmed = customInstructions?.trim();
-  if (trimmed === PI_VCC_COMPACT_INSTRUCTION) return { isPiVcc: true, keepUserTurns: 1, keepUserTurnsExplicit: false };
+  if (trimmed === PI_VCC_COMPACT_INSTRUCTION) {
+    return { isPiVcc: true, keepUserTurns: 1, keepUserTurnsExplicit: false, followUpPrompt: null };
+  }
 
   const keepPrefix = `${PI_VCC_COMPACT_INSTRUCTION} `;
-  if (!trimmed?.startsWith(keepPrefix)) return { isPiVcc: false, keepUserTurns: 1, keepUserTurnsExplicit: false };
+  if (trimmed?.startsWith(keepPrefix)) {
+    const parsed = parseKeepAndPrompt(trimmed.slice(keepPrefix.length));
+    if (parsed.keepUserTurnsExplicit && !parsed.followUpPrompt) {
+      return {
+        isPiVcc: true,
+        keepUserTurns: parsed.keepUserTurns ?? 1,
+        keepUserTurnsExplicit: true,
+        followUpPrompt: null,
+      };
+    }
+  }
 
-  const match = trimmed.slice(keepPrefix.length).match(/^keep:(\d+)$/);
-  if (!match) return { isPiVcc: false, keepUserTurns: 1, keepUserTurnsExplicit: false };
-  const parsed = Number(match[1]);
+  const parsed = parseKeepAndPrompt(customInstructions);
   return {
-    isPiVcc: true,
-    keepUserTurns: Number.isSafeInteger(parsed) ? parsed : Number.MAX_SAFE_INTEGER,
-    keepUserTurnsExplicit: true,
+    isPiVcc: false,
+    keepUserTurns: parsed.keepUserTurns ?? 1,
+    keepUserTurnsExplicit: parsed.keepUserTurnsExplicit,
+    followUpPrompt: parsed.followUpPrompt || null,
   };
 };
 
@@ -218,8 +230,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
 
     // Always handle explicit /pi-vcc marker.
     // Otherwise, only handle when user opted in via settings.
-    const { isPiVcc, keepUserTurns, keepUserTurnsExplicit } = parsePiVccInstructions(customInstructions);
-    const followUpPrompt = isPiVcc ? null : normalizeCustomInstructions(customInstructions);
+    const { isPiVcc, keepUserTurns, keepUserTurnsExplicit, followUpPrompt } = parseCompactionInstructions(customInstructions);
     pendingFollowUpPrompt = null;
     if (!isPiVcc && !settings.overrideDefaultCompaction) return;
 
