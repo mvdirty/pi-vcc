@@ -1,5 +1,7 @@
 import type { Message } from "@earendil-works/pi-ai";
 
+export type CompactionReason = "manual" | "threshold" | "overflow";
+
 export interface FileOps {
   readFiles?: string[];
   modifiedFiles?: string[];

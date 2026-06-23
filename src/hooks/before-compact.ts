@@ -2,10 +2,12 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import { writeFileSync } from "fs";
 import { compile } from "../core/summarize";
+import { parseKeepAndPrompt, PI_VCC_COMPACT_INSTRUCTION } from "../core/compact-args";
 import { loadSettings, type PiVccSettings } from "../core/settings";
 import type { PiVccCompactionDetails } from "../details";
+import type { CompactionReason } from "../types";
 
-export const PI_VCC_COMPACT_INSTRUCTION = "__pi_vcc__";
+export { PI_VCC_COMPACT_INSTRUCTION } from "../core/compact-args";
 
 export interface CompactionStats {
   summarized: number;
@@ -16,6 +18,8 @@ export interface CompactionStats {
   keepUserTurnsExplicit: boolean;
   keepFallbackToCompactAll: boolean;
   keptTokensEst: number;
+  reason?: CompactionReason;
+  willRetry?: boolean;
 }
 
 let lastStats: CompactionStats | null = null;
@@ -37,25 +41,42 @@ export const formatCompactionStats = (stats: CompactionStats): string => {
   return `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.keptUserTurns}/${stats.totalUserTurns} user turns${fallbackNote} (${stats.kept} messages, ~${formatTokens(stats.keptTokensEst)} tok).`;
 };
 
-const normalizeCustomInstructions = (customInstructions?: string): string | null => {
-  const trimmed = customInstructions?.trim();
-  return trimmed ? trimmed : null;
+const readCompactionEventContext = (event: unknown): { reason?: CompactionReason; willRetry: boolean } => {
+  const raw = event as { reason?: unknown; willRetry?: unknown };
+  const reason = raw.reason === "manual" || raw.reason === "threshold" || raw.reason === "overflow"
+    ? raw.reason
+    : undefined;
+  return { reason, willRetry: raw.willRetry === true };
 };
 
-const parsePiVccInstructions = (customInstructions?: string): { isPiVcc: boolean; keepUserTurns: number; keepUserTurnsExplicit: boolean } => {
+const parseCompactionInstructions = (customInstructions?: string): {
+  isPiVcc: boolean;
+  keepUserTurns: number;
+  keepUserTurnsExplicit: boolean;
+  followUpPrompt: string | null;
+} => {
   const trimmed = customInstructions?.trim();
-  if (trimmed === PI_VCC_COMPACT_INSTRUCTION) return { isPiVcc: true, keepUserTurns: 1, keepUserTurnsExplicit: false };
+  if (trimmed === PI_VCC_COMPACT_INSTRUCTION) {
+    return { isPiVcc: true, keepUserTurns: 1, keepUserTurnsExplicit: false, followUpPrompt: null };
+  }
 
   const keepPrefix = `${PI_VCC_COMPACT_INSTRUCTION} `;
-  if (!trimmed?.startsWith(keepPrefix)) return { isPiVcc: false, keepUserTurns: 1, keepUserTurnsExplicit: false };
+  if (trimmed?.startsWith(keepPrefix)) {
+    const parsed = parseKeepAndPrompt(trimmed.slice(keepPrefix.length));
+    return {
+      isPiVcc: true,
+      keepUserTurns: parsed.keepUserTurns ?? 1,
+      keepUserTurnsExplicit: parsed.keepUserTurnsExplicit,
+      followUpPrompt: null,
+    };
+  }
 
-  const match = trimmed.slice(keepPrefix.length).match(/^keep:(\d+)$/);
-  if (!match) return { isPiVcc: false, keepUserTurns: 1, keepUserTurnsExplicit: false };
-  const parsed = Number(match[1]);
+  const parsed = parseKeepAndPrompt(customInstructions);
   return {
-    isPiVcc: true,
-    keepUserTurns: Number.isSafeInteger(parsed) ? parsed : Number.MAX_SAFE_INTEGER,
-    keepUserTurnsExplicit: true,
+    isPiVcc: false,
+    keepUserTurns: parsed.keepUserTurns ?? 1,
+    keepUserTurnsExplicit: parsed.keepUserTurnsExplicit,
+    followUpPrompt: parsed.followUpPrompt || null,
   };
 };
 
@@ -202,12 +223,12 @@ const REASON_MESSAGES: Record<OwnCutCancelReason, string> = {
 export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
   pi.on("session_before_compact", (event, ctx) => {
     const { preparation, branchEntries, customInstructions } = event;
+    const { reason, willRetry } = readCompactionEventContext(event);
     const settings = loadSettings();
 
     // Always handle explicit /pi-vcc marker.
     // Otherwise, only handle when user opted in via settings.
-    const { isPiVcc, keepUserTurns, keepUserTurnsExplicit } = parsePiVccInstructions(customInstructions);
-    const followUpPrompt = isPiVcc ? null : normalizeCustomInstructions(customInstructions);
+    const { isPiVcc, keepUserTurns, keepUserTurnsExplicit, followUpPrompt } = parseCompactionInstructions(customInstructions);
     pendingFollowUpPrompt = null;
     if (!isPiVcc && !settings.overrideDefaultCompaction) return;
 
@@ -240,9 +261,12 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       const userIndices = liveRoles.reduce<number[]>((acc, r, i) => (r === "user" ? (acc.push(i), acc) : acc), []);
 
       pendingFollowUpPrompt = null;
+      const fallbackToCore = !isPiVcc && (reason === "overflow" || willRetry);
       dbg(settings, {
-        cancelled: true,
+        cancelled: !fallbackToCore,
+        fallbackToCore,
         reason: ownCut.reason,
+        compaction: { reason, willRetry },
         isPiVcc,
         counts: {
           total: branchEntries.length,
@@ -271,6 +295,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
           hasContent: e.type === "message" ? e.message?.content != null : undefined,
         })),
       });
+
+      if (fallbackToCore) return;
 
       try {
         ctx?.ui?.notify?.(REASON_MESSAGES[ownCut.reason], "warning");
@@ -308,6 +334,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       keepUserTurnsExplicit,
       keepFallbackToCompactAll: ownCut.keepFallbackToCompactAll,
       keptTokensEst: Math.round(keptChars / 4),
+      reason,
+      willRetry,
     };
 
     const config = settings;
@@ -334,6 +362,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
 
     dbg(config, {
       usedOwnCut: true,
+      compaction: { reason, willRetry },
       messagesToSummarize: agentMessages.length,
       messagesPreviewHead: agentMessages.slice(0, 3).map((m: any) => ({ role: m.role, preview: previewContent(m.content) })),
       messagesPreviewTail: agentMessages.slice(-3).map((m: any) => ({ role: m.role, preview: previewContent(m.content) })),
@@ -352,6 +381,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       sections: [...summary.matchAll(/^\[(.+?)\]/gm)].map((m) => m[1]),
       sourceMessageCount: agentMessages.length,
       previousSummaryUsed: Boolean(preparation.previousSummary),
+      reason,
+      willRetry,
     };
 
     lastCompactWasPiVcc = isPiVcc;
@@ -369,10 +400,12 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
   // Fire success toast for /compact path only (delayed to let UI settle).
   // /pi-vcc path uses its own onComplete callback in the command handler.
   pi.on("session_compact", async (event, ctx) => {
+    const { reason, willRetry } = readCompactionEventContext(event);
     if (!event.fromExtension) return;
     const followUpPrompt = pendingFollowUpPrompt;
     pendingFollowUpPrompt = null;
     if (lastCompactWasPiVcc) return; // /pi-vcc handles its own toast via onComplete
+    if (reason === "overflow" || willRetry) return;
     const stats = lastStats;
     if (!stats) return;
     if (followUpPrompt) {
