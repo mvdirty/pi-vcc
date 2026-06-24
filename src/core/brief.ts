@@ -63,7 +63,7 @@ const truncateTokens = (text: string, limit: number): string => {
 
 // ── bash command compression ──
 
-const BASH_CAP = 120;
+const BASH_CAP = 240;
 const PIPE_TAIL_RE = /\s*\|\s*(?:head|tail|sort|wc|column|tr|cut|awk|uniq|python3|node|bun)(?:\s[^|]*)?$/;
 
 /** Semantic compression: strip cd prefix, pipe tail formatting, cap length */

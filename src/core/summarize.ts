@@ -3,12 +3,17 @@ import type { FileOps } from "../types";
 import { normalize } from "./normalize";
 import { filterNoise } from "./filter-noise";
 import { buildSections } from "./build-sections";
-import { formatSummary, capBrief, RECALL_NOTE, wrapLongLines } from "./format";
+import { formatSummary, capBrief, BRIEF_MAX_LINES, RECALL_NOTE, wrapLongLines } from "./format";
+import { selectRankedBriefBlocks, type BriefRankingOptions } from "./rank";
 
 export interface CompileInput {
   messages: Message[];
   previousSummary?: string;
   fileOps?: FileOps;
+}
+
+export interface RankedCompileInput extends CompileInput {
+  ranking?: BriefRankingOptions;
 }
 
 const HEADER_NAMES = ["Session Goal", "Files And Changes", "Commits", "Outstanding Context", "User Preferences"];
@@ -108,7 +113,30 @@ const mergeBriefTranscript = (prev: string, fresh: string): string => {
   return prev + "\n\n" + fresh;
 };
 
-const mergePrevious = (prev: string, fresh: string): string => {
+const briefLineCount = (text: string): number =>
+  text ? text.split("\n").length : 0;
+
+const capBriefToLineBudget = (text: string, maxLines: number): string => {
+  if (!text || maxLines <= 0) return "";
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return text;
+  const omitted = lines.length - maxLines;
+  const kept = lines.slice(-maxLines);
+  const firstHeader = kept.findIndex((l) => /^\[.+\]/.test(l));
+  const clean = firstHeader > 0 ? kept.slice(firstHeader) : kept;
+  return `...(${omitted} earlier lines omitted)\n\n${clean.join("\n")}`;
+};
+
+const mergeBriefTranscriptWithFreshBudget = (prev: string, fresh: string): string => {
+  if (!prev) return fresh;
+  if (!fresh) return capBrief(prev);
+  const freshLines = briefLineCount(fresh);
+  const remainingPrevLines = Math.max(0, BRIEF_MAX_LINES - freshLines);
+  const prevTail = capBriefToLineBudget(prev, remainingPrevLines);
+  return prevTail ? `${prevTail}\n\n${fresh}` : fresh;
+};
+
+const mergePrevious = (prev: string, fresh: string, options: { preserveFreshBrief?: boolean } = {}): string => {
   // Merge header sections
   const headers = HEADER_NAMES
     .map((header) => {
@@ -121,32 +149,54 @@ const mergePrevious = (prev: string, fresh: string): string => {
   // Merge brief transcript
   const prevBrief = briefOf(prev);
   const freshBrief = briefOf(fresh);
-  const mergedBrief = mergeBriefTranscript(prevBrief, freshBrief);
+  const mergedBrief = options.preserveFreshBrief
+    ? mergeBriefTranscriptWithFreshBudget(prevBrief, freshBrief)
+    : mergeBriefTranscript(prevBrief, freshBrief);
 
   const parts: string[] = [];
   if (headers.length > 0) {
     parts.push(headers.join("\n\n"));
   }
   if (mergedBrief) {
-    parts.push(capBrief(mergedBrief));
+    parts.push(options.preserveFreshBrief ? mergedBrief : capBrief(mergedBrief));
   }
 
   return parts.join(SEPARATOR);
 };
 
-export const compile = (input: CompileInput): string => {
+interface CompileWithBriefBlocksOptions {
+  briefBlocksFor?: (blocks: ReturnType<typeof normalize>) => ReturnType<typeof normalize>;
+  capFreshBrief?: boolean;
+  preserveFreshBriefOnMerge?: boolean;
+}
+
+const compileWithBriefBlocks = (input: CompileInput, options: CompileWithBriefBlocksOptions = {}): string => {
   const blocks = filterNoise(normalize(input.messages));
-  const data = buildSections({ blocks });
-  const fresh = formatSummary(data);
+  const briefBlocks = options.briefBlocksFor?.(blocks);
+  const data = buildSections({ blocks, briefBlocks });
+  const fresh = formatSummary(data, { capBriefTranscript: options.capFreshBrief ?? true });
   // Strip any legacy RECALL_NOTE baked into prev summary (pre-fix format)
   // so merge doesn't re-stack it inside the brief.
   const prev = input.previousSummary
     ? stripRecallNote(input.previousSummary)
     : undefined;
-  const merged = prev ? mergePrevious(prev, fresh) : fresh;
+  const merged = prev ? mergePrevious(prev, fresh, { preserveFreshBrief: options.preserveFreshBriefOnMerge }) : fresh;
   if (!merged) return "";
   return wrapLongLines(merged + SEPARATOR + RECALL_NOTE);
 };
+
+export const compile = (input: CompileInput): string =>
+  compileWithBriefBlocks(input);
+
+export const compileRanked = (input: RankedCompileInput): string =>
+  compileWithBriefBlocks(input, {
+    briefBlocksFor: (blocks) => selectRankedBriefBlocks(blocks, {
+      ...input.ranking,
+      fileOps: input.ranking?.fileOps ?? input.fileOps,
+    }),
+    capFreshBrief: false,
+    preserveFreshBriefOnMerge: true,
+  });
 
 const stripRecallNote = (text: string): string => {
   // Remove trailing RECALL_NOTE (and any separators surrounding it) if present.
