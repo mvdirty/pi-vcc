@@ -67,6 +67,52 @@ describe("section-aware brief ranking prototype", () => {
     expect(report.score).toBeGreaterThan(chatter.score);
   });
 
+  it("does not spend ranked selection budget on tool results", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "user", text: "Fix auth bug" },
+      { kind: "assistant", text: "Root cause is stale token refresh." },
+      { kind: "tool_call", name: "Edit", args: { file_path: "src/auth.ts" } },
+      { kind: "tool_result", name: "Edit", text: "large hidden tool output".repeat(200) },
+      { kind: "tool_result", name: "bash", text: "more hidden output".repeat(200) },
+    ];
+
+    const selected = selectRankedBriefBlocks(blocks, { maxBlocks: 4, preserveRecentBlocks: 2 });
+
+    expect(selected).toContain(blocks[0]);
+    expect(selected).toContain(blocks[1]);
+    expect(selected).toContain(blocks[2]);
+    expect(selected).not.toContain(blocks[3]);
+    expect(selected).not.toContain(blocks[4]);
+  });
+
+  it("penalizes and deduplicates repeated gh PR polling commands", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "user", text: "Merge PR 123 when green" },
+      { kind: "tool_call", name: "bash", args: { command: "gh pr view 123 --json mergeStateStatus" } },
+      { kind: "tool_call", name: "bash", args: { command: "gh pr checks 123 --watch" } },
+      { kind: "tool_call", name: "bash", args: { command: "gh pr merge 123 --squash --delete-branch" } },
+    ];
+    const ranked = rankBriefBlocks(blocks);
+    const view = ranked.find((r) => r.block === blocks[1])!;
+    const checks = ranked.find((r) => r.block === blocks[2])!;
+    const merge = ranked.find((r) => r.block === blocks[3])!;
+
+    expect(view.reasons).toContain("gh-pr-poll");
+    expect(checks.reasons).toContain("gh-pr-poll");
+    expect(merge.reasons).not.toContain("gh-pr-poll");
+
+    const selected = selectRankedBriefBlocks(blocks, { maxBlocks: 3, preserveRecentBlocks: 0 });
+    const pollCount = selected.filter((block) =>
+      block.kind === "tool_call"
+        && /^bash$/i.test(block.name)
+        && typeof block.args.command === "string"
+        && /gh pr (?:view|checks) 123/.test(block.args.command),
+    ).length;
+
+    expect(pollCount).toBeLessThanOrEqual(1);
+    expect(selected).toContain(blocks[3]);
+  });
+
   it("compileRanked reduces brief noise while keeping semantic sections from all blocks", () => {
     const exploration = Array.from({ length: 15 }, (_, i) => [
       userMsg(`look around ${i}`),

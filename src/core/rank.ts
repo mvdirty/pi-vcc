@@ -25,9 +25,18 @@ const READ_TOOL_RE = /^(read|glob|grep|ls|find|semantic_query|semantic_grep|sema
 const NOISY_COMMAND_RE = /^(?:ls|pwd|find\b|grep\b|rg\b|cat\b|sed\b|awk\b|head\b|tail\b)/;
 const TEST_COMMAND_RE = /\b(?:bun|npm|pnpm|yarn|node|pytest|cargo|go|mvn|gradle)\b[^\n]*(?:test|spec|check|lint|build|tsc)/i;
 const LIGHT_HINT_RE = /\b(?:fail(?:ed|ing)?|error|exception|crash|broken|blocker|fixed|implemented|resolved|commit|preference|prefer|always|never)\b/i;
+const GH_PR_POLL_RE = /(?:^|\s)gh\s+pr\s+(?:view|checks)\s+(\d+)\b/i;
 const MIN_SEGMENT_CLOSING_ASSISTANT_CHARS = 120;
 
 const asPathSet = (paths?: string[]): Set<string> => new Set((paths ?? []).filter(Boolean));
+
+const bashCommandFromBlock = (block: NormalizedBlock): string | undefined => {
+  if (block.kind === "bash") return block.command;
+  if (block.kind === "tool_call" && /^bash$/i.test(block.name) && typeof block.args.command === "string") {
+    return block.args.command;
+  }
+  return undefined;
+};
 
 const pathFromBlock = (block: NormalizedBlock): string | undefined => {
   if (block.kind === "tool_call") return extractPath(block.args) ?? undefined;
@@ -59,10 +68,12 @@ const scoreBlock = (
   if (block.kind === "tool_result") add(ranked, 1, "tool-result-low-value");
 
   if (block.kind === "tool_call") {
+    const command = bashCommandFromBlock(block);
     if (EDIT_TOOL_RE.test(block.name)) add(ranked, 34, "edit-tool");
-    else if (/^bash$/i.test(block.name) && typeof block.args.command === "string" && TEST_COMMAND_RE.test(block.args.command)) add(ranked, 26, "test-command");
+    else if (command && TEST_COMMAND_RE.test(command)) add(ranked, 26, "test-command");
     else if (READ_TOOL_RE.test(block.name)) add(ranked, 6, "read-tool");
     else add(ranked, 12, "tool-call");
+    if (command && GH_PR_POLL_RE.test(command)) add(ranked, -10, "gh-pr-poll");
   }
 
   if (block.kind === "bash") {
@@ -70,6 +81,7 @@ const scoreBlock = (
     if (block.exitCode != null && block.exitCode !== 0) add(ranked, 24, "nonzero-exit");
     if (TEST_COMMAND_RE.test(block.command)) add(ranked, 22, "test-command");
     if (NOISY_COMMAND_RE.test(block.command.trim())) add(ranked, -8, "exploration-command");
+    if (GH_PR_POLL_RE.test(block.command)) add(ranked, -10, "gh-pr-poll");
   }
 
   const path = pathFromBlock(block);
@@ -136,13 +148,16 @@ const boostSegmentClosingAssistants = (ranked: RankedBlock[]) => {
 };
 
 const dedupKey = (block: NormalizedBlock): string | undefined => {
+  const command = bashCommandFromBlock(block);
+  const ghPrPoll = command?.match(GH_PR_POLL_RE);
+  if (ghPrPoll) return `gh-pr-poll:${ghPrPoll[1]}`;
+  if (command) {
+    const normalized = command.replace(/\s+/g, " ").trim();
+    return normalized ? `bash:${normalized}` : undefined;
+  }
   if (block.kind === "tool_call") {
     const path = pathFromBlock(block);
     return path ? `tool:${block.name.toLowerCase()}:${path}` : undefined;
-  }
-  if (block.kind === "bash") {
-    const normalized = block.command.replace(/\s+/g, " ").trim();
-    return normalized ? `bash:${normalized}` : undefined;
   }
   return undefined;
 };
@@ -169,6 +184,7 @@ export const selectRankedBriefBlocks = (
   const seenKeys = new Set<string>();
 
   for (let i = Math.max(0, blocks.length - preserveRecentBlocks); i < blocks.length; i++) {
+    if (blocks[i].kind === "tool_result") continue;
     selected.add(i);
     const key = dedupKey(blocks[i]);
     if (key) seenKeys.add(key);
@@ -177,6 +193,7 @@ export const selectRankedBriefBlocks = (
   const ordered = [...ranked].sort((a, b) => b.score - a.score || b.index - a.index);
   for (const item of ordered) {
     if (selected.size >= maxBlocks) break;
+    if (item.block.kind === "tool_result") continue;
     const key = dedupKey(item.block);
     if (key && seenKeys.has(key)) continue;
     selected.add(item.index);
