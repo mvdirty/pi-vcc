@@ -46,8 +46,15 @@ const STOP_WORDS = new Set([
   "if", "then", "than", "when", "where", "how", "just", "also",
 ]);
 
+const normalizeForTokenBudget = (text: string): string =>
+  text
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
 const truncateTokens = (text: string, limit: number): string => {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = normalizeForTokenBudget(text);
   let count = 0;
   let lastEnd = 0;
   for (const seg of segmenter.segment(flat)) {
@@ -76,12 +83,12 @@ const significantWordSpans = (flat: string): { start: number; end: number }[] =>
 
 
 const truncateTokensHeadTail = (text: string, headLimit: number, tailLimit: number): string => {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = normalizeForTokenBudget(text);
   const words = significantWordSpans(flat);
   if (words.length <= headLimit + tailLimit) return flat;
   const head = flat.slice(0, words[headLimit - 1].end).trimEnd();
   const tail = flat.slice(words[words.length - tailLimit].start).trimStart();
-  return `${head}...(middle truncated)...${tail}`;
+  return `${head}\n...(middle truncated)...\n${tail}`;
 };
 
 const nextRenderableBlock = (blocks: NormalizedBlock[], index: number): NormalizedBlock | undefined => {
@@ -169,6 +176,14 @@ export const buildBriefSections = (blocks: NormalizedBlock[]): BriefLine[] => {
     lastHeader = header;
   };
 
+  const pushText = (header: string, text: string, ref = "") => {
+    const lines = text.split("\n");
+    if (ref && lines.length > 0) {
+      lines[lines.length - 1] = `${lines[lines.length - 1]}${ref}`;
+    }
+    for (const line of lines) push(header, line);
+  };
+
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
     const b = blocks[blockIndex];
     switch (b.kind) {
@@ -177,7 +192,7 @@ export const buildBriefSections = (blocks: NormalizedBlock[]): BriefLine[] => {
         const text = truncateTokens(collapseSkillText(b.text), TRUNCATE_USER);
         if (text) {
           const ref = b.sourceIndex != null ? ` (#${b.sourceIndex})` : "";
-          push("[user]", text + ref);
+          pushText("[user]", text, ref);
         }
         lastHeader = "[user]";
         break;
@@ -204,7 +219,7 @@ export const buildBriefSections = (blocks: NormalizedBlock[]): BriefLine[] => {
           : truncateTokensHeadTail(raw, ASSISTANT_HEAD_WORDS, ASSISTANT_TAIL_WORDS);
         if (text) {
           const ref = b.sourceIndex != null ? ` (#${b.sourceIndex})` : "";
-          push("[assistant]", text + ref);
+          pushText("[assistant]", text, ref);
         }
         break;
       }

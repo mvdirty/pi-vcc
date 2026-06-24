@@ -19,6 +19,29 @@ describe("compileBrief", () => {
     expect(r).toContain("Let me look at the auth module.");
   });
 
+  it("preserves assistant markdown line breaks", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "assistant",
+        text: "Output nhìn tốt.\n\n```text\nblock #41: head\ntail\n```\n\n- first\n- second",
+        sourceIndex: 96,
+      },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("Output nhìn tốt.\n\n```text\nblock #41: head\ntail\n```\n\n- first\n- second (#96)");
+  });
+
+  it("preserves assistant line breaks when head/tail truncating", () => {
+    const lines = Array.from({ length: 300 }, (_, i) => `line${i} signal${i}`);
+    const blocks: NormalizedBlock[] = [
+      { kind: "assistant", text: lines.join("\n") },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("line0 signal0\nline1 signal1");
+    expect(r).toContain("...(middle truncated)...");
+    expect(r).toContain("\nline299 signal299");
+  });
+
   it("renders bash commands as user actions", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "bash", command: "npm test", output: "FAIL noisy output", exitCode: 1, sourceIndex: 2 },
