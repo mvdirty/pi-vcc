@@ -4,7 +4,10 @@ import { extractPath } from "./tool-args";
 import { collapseSkillText } from "./skill-collapse";
 
 const TRUNCATE_USER = 256;
-const TRUNCATE_ASSISTANT = 200;
+const SEGMENT_CLOSING_ASSISTANT_HEAD_WORDS = 120;
+const SEGMENT_CLOSING_ASSISTANT_TAIL_WORDS = 120;
+const ASSISTANT_HEAD_WORDS = 80;
+const ASSISTANT_TAIL_WORDS = 120;
 
 // Strip common self-reflective assistant prefixes that carry no semantic info.
 // Conservative list: only removes the leading filler, preserves the actual content.
@@ -59,6 +62,39 @@ const truncateTokens = (text: string, limit: number): string => {
     lastEnd = seg.index + seg.segment.length;
   }
   return flat;
+};
+
+const significantWordSpans = (flat: string): { start: number; end: number }[] => {
+  const words: { start: number; end: number }[] = [];
+  for (const seg of segmenter.segment(flat)) {
+    if (!isWord(seg)) continue;
+    if (STOP_WORDS.has(seg.segment.toLowerCase())) continue;
+    words.push({ start: seg.index, end: seg.index + seg.segment.length });
+  }
+  return words;
+};
+
+
+const truncateTokensHeadTail = (text: string, headLimit: number, tailLimit: number): string => {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const words = significantWordSpans(flat);
+  if (words.length <= headLimit + tailLimit) return flat;
+  const head = flat.slice(0, words[headLimit - 1].end).trimEnd();
+  const tail = flat.slice(words[words.length - tailLimit].start).trimStart();
+  return `${head}...(middle truncated)...${tail}`;
+};
+
+const nextRenderableBlock = (blocks: NormalizedBlock[], index: number): NormalizedBlock | undefined => {
+  for (let i = index + 1; i < blocks.length; i++) {
+    if (blocks[i].kind !== "tool_result") return blocks[i];
+  }
+  return undefined;
+};
+
+const isSegmentClosingAssistant = (blocks: NormalizedBlock[], index: number): boolean => {
+  if (blocks[index]?.kind !== "assistant") return false;
+  const next = nextRenderableBlock(blocks, index);
+  return !next || next.kind === "user";
 };
 
 // ── bash command compression ──
@@ -133,7 +169,8 @@ export const buildBriefSections = (blocks: NormalizedBlock[]): BriefLine[] => {
     lastHeader = header;
   };
 
-  for (const b of blocks) {
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+    const b = blocks[blockIndex];
     switch (b.kind) {
       case "user": {
         if (isNoiseUser(b.text)) break;
@@ -162,7 +199,9 @@ export const buildBriefSections = (blocks: NormalizedBlock[]): BriefLine[] => {
           if (stripped === raw) break;
           raw = stripped;
         }
-        const text = truncateTokens(raw, TRUNCATE_ASSISTANT);
+        const text = isSegmentClosingAssistant(blocks, blockIndex)
+          ? truncateTokensHeadTail(raw, SEGMENT_CLOSING_ASSISTANT_HEAD_WORDS, SEGMENT_CLOSING_ASSISTANT_TAIL_WORDS)
+          : truncateTokensHeadTail(raw, ASSISTANT_HEAD_WORDS, ASSISTANT_TAIL_WORDS);
         if (text) {
           const ref = b.sourceIndex != null ? ` (#${b.sourceIndex})` : "";
           push("[assistant]", text + ref);

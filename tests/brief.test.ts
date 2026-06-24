@@ -104,14 +104,29 @@ describe("compileBrief", () => {
     expect(r).not.toContain("word299");
   });
 
-  it("truncates long assistant text", () => {
-    const longText = Array.from({ length: 300 }, (_, i) => `word${i}`).join(" ");
+  it("truncates segment-closing assistant text with head and tail", () => {
+    const longText = Array.from({ length: 600 }, (_, i) => `word${i}`).join(" ");
     const blocks: NormalizedBlock[] = [
       { kind: "assistant", text: longText },
     ];
     const r = compileBrief(blocks);
-    expect(r).toContain("(truncated)");
-    expect(r).not.toContain("word299");
+    expect(r).toContain("...(middle truncated)...");
+    expect(r).toContain("word0");
+    expect(r).toContain("word599");
+    expect(r).not.toContain("word300");
+  });
+
+  it("truncates non-closing assistant text with head and tail", () => {
+    const longText = Array.from({ length: 600 }, (_, i) => `word${i}`).join(" ");
+    const blocks: NormalizedBlock[] = [
+      { kind: "assistant", text: longText },
+      { kind: "tool_call", name: "Read", args: { file_path: "a.ts" } },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("...(middle truncated)...");
+    expect(r).toContain("word0");
+    expect(r).toContain("word599");
+    expect(r).not.toContain("word300");
   });
 
   it("renders a realistic conversation flow", () => {

@@ -25,6 +25,7 @@ const READ_TOOL_RE = /^(read|glob|grep|ls|find|semantic_query|semantic_grep|sema
 const NOISY_COMMAND_RE = /^(?:ls|pwd|find\b|grep\b|rg\b|cat\b|sed\b|awk\b|head\b|tail\b)/;
 const TEST_COMMAND_RE = /\b(?:bun|npm|pnpm|yarn|node|pytest|cargo|go|mvn|gradle)\b[^\n]*(?:test|spec|check|lint|build|tsc)/i;
 const LIGHT_HINT_RE = /\b(?:fail(?:ed|ing)?|error|exception|crash|broken|blocker|fixed|implemented|resolved|commit|preference|prefer|always|never)\b/i;
+const MIN_SEGMENT_CLOSING_ASSISTANT_CHARS = 120;
 
 const asPathSet = (paths?: string[]): Set<string> => new Set((paths ?? []).filter(Boolean));
 
@@ -115,6 +116,25 @@ const boostAdjacency = (ranked: RankedBlock[]) => {
   }
 };
 
+const nextNonToolResult = (ranked: RankedBlock[], index: number): NormalizedBlock | undefined => {
+  for (let i = index + 1; i < ranked.length; i++) {
+    if (ranked[i].block.kind !== "tool_result") return ranked[i].block;
+  }
+  return undefined;
+};
+
+const boostSegmentClosingAssistants = (ranked: RankedBlock[]) => {
+  for (let i = 0; i < ranked.length; i++) {
+    const current = ranked[i];
+    if (current.block.kind !== "assistant") continue;
+    if (current.block.text.trim().length < MIN_SEGMENT_CLOSING_ASSISTANT_CHARS) continue;
+    const next = nextNonToolResult(ranked, i);
+    if (!next || next.kind === "user") {
+      add(current, 14, "segment-closing-assistant");
+    }
+  }
+};
+
 const dedupKey = (block: NormalizedBlock): string | undefined => {
   if (block.kind === "tool_call") {
     const path = pathFromBlock(block);
@@ -132,6 +152,7 @@ export const rankBriefBlocks = (blocks: NormalizedBlock[], options: BriefRanking
   const readFiles = asPathSet(options.fileOps?.readFiles);
   const ranked = blocks.map((block, index) => scoreBlock(block, index, blocks.length, modifiedFiles, readFiles));
   boostAdjacency(ranked);
+  boostSegmentClosingAssistants(ranked);
   return ranked;
 };
 

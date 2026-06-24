@@ -45,6 +45,28 @@ describe("section-aware brief ranking prototype", () => {
     ]);
   });
 
+  it("boosts non-trivial assistant turns that close a user segment", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "user", text: "Fix auth bug" },
+      { kind: "assistant", text: "I'll inspect this now." },
+      { kind: "tool_call", name: "Read", args: { file_path: "noise-a.ts" } },
+      { kind: "tool_call", name: "Edit", args: { file_path: "src/auth.ts" } },
+      { kind: "tool_call", name: "bash", args: { command: "bun test tests/auth.test.ts" } },
+      {
+        kind: "assistant",
+        text: "Implemented the auth fix, verified the focused auth test, confirmed the changed file is limited to src/auth.ts, and no follow-up blockers remain for this task.",
+      },
+      { kind: "user", text: "ok next" },
+    ];
+    const ranked = rankBriefBlocks(blocks);
+    const report = ranked.find((r) => r.block === blocks[5])!;
+    const chatter = ranked.find((r) => r.block === blocks[1])!;
+
+    expect(report.reasons).toContain("segment-closing-assistant");
+    expect(chatter.reasons).not.toContain("segment-closing-assistant");
+    expect(report.score).toBeGreaterThan(chatter.score);
+  });
+
   it("compileRanked reduces brief noise while keeping semantic sections from all blocks", () => {
     const exploration = Array.from({ length: 15 }, (_, i) => [
       userMsg(`look around ${i}`),
