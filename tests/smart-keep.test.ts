@@ -51,12 +51,12 @@ describe("resolveSmartKeepUserTurns", () => {
     expect(r.smartAdjusted).toBe(false);
   });
 
-  test("keep:1 tail <= min → boost to largest N staying <= max", () => {
+  test("keep:1 tail <= min → boost to largest safe N before compact-all boundary", () => {
     // Each user+assistant turn pair = 3+3 = 6 tokens.
     // keep:1 tail = u3+a3 = 6 tokens (<= min 10).
     // keep:2 tail = u2+a2+u3+a3 = 12 (<= max 40).
-    // keep:3 tail = all = 18 (<= max 40).
-    // → select 3.
+    // keep:3 would keep all user turns, which buildOwnCut treats as compact-all.
+    // → select 2.
     const entries = [
       msg("u1", "user", tokenContent(3)),
       msg("a1", "assistant", tokenContent(3)),
@@ -73,7 +73,7 @@ describe("resolveSmartKeepUserTurns", () => {
       minTokens: 10,
       maxTokens: 40,
     });
-    expect(r.keepUserTurns).toBe(3);
+    expect(r.keepUserTurns).toBe(2);
     expect(r.smartAdjusted).toBe(true);
     expect(r.fromKeep).toBe(1);
   });
@@ -162,7 +162,7 @@ describe("resolveSmartKeepUserTurns", () => {
     expect(r.smartAdjusted).toBe(false);
   });
 
-  test("default thresholds (5k/20k): small tail → boost available", () => {
+  test("default thresholds (5k/20k): small tail → boost before compact-all boundary", () => {
     // Tiny content: keep:1 tail way below 5k.
     const entries = [
       msg("u1", "user", "hi"),
@@ -179,8 +179,8 @@ describe("resolveSmartKeepUserTurns", () => {
       smartKeepTail: true,
       // use default thresholds
     });
-    // All turns fit well under 20k, so boost to 3.
-    expect(r.keepUserTurns).toBe(3);
+    // keep:3 would cross the compact-all boundary, so boost only to 2.
+    expect(r.keepUserTurns).toBe(2);
     expect(r.smartAdjusted).toBe(true);
     expect(r.fromKeep).toBe(1);
   });
