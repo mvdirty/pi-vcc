@@ -18,6 +18,10 @@ export interface CompactionStats {
   keepUserTurnsExplicit: boolean;
   keepFallbackToCompactAll: boolean;
   keptTokensEst: number;
+  /** True when smart-keep boosted the default keep beyond 1. */
+  smartKeepAdjusted?: boolean;
+  /** Base keep before smart adjustment (for toast like "1→3"). */
+  smartFromKeep?: number;
   reason?: CompactionReason;
   willRetry?: boolean;
 }
@@ -38,7 +42,10 @@ export const formatCompactionStats = (stats: CompactionStats): string => {
       ? `; requested keep:${stats.requestedKeepUserTurns}, compact-all fallback`
       : "; compact-all fallback"
     : "";
-  return `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.keptUserTurns}/${stats.totalUserTurns} user turns${fallbackNote} (${stats.kept} messages, ~${formatTokens(stats.keptTokensEst)} tok).`;
+  const smartNote = stats.smartKeepAdjusted
+    ? `; smart keep:${stats.smartFromKeep}→${stats.keptUserTurns}`
+    : "";
+  return `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.keptUserTurns}/${stats.totalUserTurns} user turns${fallbackNote}${smartNote} (${stats.kept} messages, ~${formatTokens(stats.keptTokensEst)} tok).`;
 };
 
 const readCompactionEventContext = (event: unknown): { reason?: CompactionReason; willRetry: boolean } => {
@@ -105,6 +112,18 @@ const previewContent = (content: unknown): string => {
       .slice(0, 300);
   }
   return "";
+};
+
+/** Estimate char length of a single message content (string or content-parts array). */
+const messageContentChars = (content: unknown): number => {
+  if (typeof content === "string") return content.length;
+  if (Array.isArray(content)) return content.reduce((s: number, p: any) => {
+    if (p.text) return s + p.text.length;
+    if (p.type === "toolCall") return s + (p.name?.length ?? 0) + (typeof p.input === "string" ? p.input.length : JSON.stringify(p.input ?? "").length);
+    if (p.type === "toolResult") return s + (typeof p.content === "string" ? p.content.length : JSON.stringify(p.content ?? "").length);
+    return s;
+  }, 0);
+  return 0;
 };
 
 interface EntryWithMessage {
@@ -215,6 +234,89 @@ export function buildOwnCut(branchEntries: any[], keepUserTurns = 1): OwnCutResu
   };
 }
 
+// ── smart keep-tail: boost default keep when tail is small ──
+
+export const MIN_SMART_TAIL_TOKENS = 5_000;
+export const MAX_SMART_TAIL_TOKENS = 20_000;
+
+export interface ResolveSmartKeepOptions {
+  branchEntries: any[];
+  /** Requested keep:N; null when user did not specify (default path). */
+  requestedKeepUserTurns: number | null;
+  /** True when user typed keep:N explicitly — always respected. */
+  explicit: boolean;
+  /** Setting toggle. */
+  smartKeepTail: boolean;
+  /** Injectable thresholds for tests. */
+  minTokens?: number;
+  maxTokens?: number;
+}
+
+export interface ResolveSmartKeepResult {
+  keepUserTurns: number;
+  smartAdjusted: boolean;
+  /** Original base keep, for toast like "1→3". */
+  fromKeep: number;
+}
+
+/**
+ * Estimate tail tokens for a given keep:N.
+ * Returns null when keep would trigger compact-all (tail lost) or cancel,
+ * so the resolver can stop growing instead of selecting a value that
+ * discards the tail entirely.
+ */
+const tailTokensForKeep = (branchEntries: any[], keepUserTurns: number): number | null => {
+  const cut = buildOwnCut(branchEntries, keepUserTurns);
+  if (!cut.ok || cut.compactAll) return null;
+  const idx = branchEntries.findIndex((e: any) => e.id === cut.firstKeptEntryId);
+  if (idx < 0) return null;
+  const kept = branchEntries.slice(idx).filter((e: any) => e.type === "message");
+  const chars = kept.reduce(
+    (sum: number, e: any) => sum + messageContentChars(e.message?.content),
+    0,
+  );
+  return Math.round(chars / 4);
+};
+
+/**
+ * Resolve the effective keep:N.
+ * - Explicit keep:N from the user is always respected.
+ * - smartKeepTail=false → old behavior (default keep:1).
+ * - smartKeepTail=true → if keep:1 tail <= minTokens, grow keep to the
+ *   largest N whose tail stays <= maxTokens. Stops at compact-all boundary.
+ */
+export const resolveSmartKeepUserTurns = (opts: ResolveSmartKeepOptions): ResolveSmartKeepResult => {
+  const minTokens = opts.minTokens ?? MIN_SMART_TAIL_TOKENS;
+  const maxTokens = opts.maxTokens ?? MAX_SMART_TAIL_TOKENS;
+  const baseKeep = opts.requestedKeepUserTurns ?? 1;
+
+  if (opts.explicit || !opts.smartKeepTail) {
+    return { keepUserTurns: baseKeep, smartAdjusted: false, fromKeep: baseKeep };
+  }
+
+  const baseTokens = tailTokensForKeep(opts.branchEntries, baseKeep);
+  // base tail already above min (or unmeasurable / compact-all) → don't grow.
+  if (baseTokens == null || baseTokens > minTokens) {
+    return { keepUserTurns: baseKeep, smartAdjusted: false, fromKeep: baseKeep };
+  }
+
+  const baseCut = buildOwnCut(opts.branchEntries, baseKeep);
+  const totalUserTurns = baseCut.ok ? baseCut.totalUserTurns : 0;
+
+  let selected = baseKeep;
+  for (let k = baseKeep + 1; k <= totalUserTurns; k++) {
+    const tokens = tailTokensForKeep(opts.branchEntries, k);
+    if (tokens == null || tokens > maxTokens) break;
+    selected = k;
+  }
+
+  return {
+    keepUserTurns: selected,
+    smartAdjusted: selected !== baseKeep,
+    fromKeep: baseKeep,
+  };
+};
+
 const REASON_MESSAGES: Record<OwnCutCancelReason, string> = {
   no_live_messages: "pi-vcc: Nothing to compact (no live messages)",
   too_few_live_messages: "pi-vcc: Too few messages to compact",
@@ -232,7 +334,15 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     pendingFollowUpPrompt = null;
     if (!isPiVcc && !settings.overrideDefaultCompaction) return;
 
-    const ownCut = buildOwnCut(branchEntries as any[], keepUserTurns);
+    // Smart keep-tail: boost default keep when the tail is small.
+    // Explicit keep:N from the user is always respected (resolver no-ops).
+    const smartKeep = resolveSmartKeepUserTurns({
+      branchEntries: branchEntries as any[],
+      requestedKeepUserTurns: keepUserTurnsExplicit ? keepUserTurns : null,
+      explicit: keepUserTurnsExplicit,
+      smartKeepTail: settings.smartKeepTail,
+    });
+    const ownCut = buildOwnCut(branchEntries as any[], smartKeep.keepUserTurns);
     if (!ownCut.ok) {
       const lastComp = [...branchEntries].reverse().find((e: any) => e.type === "compaction");
       const lastCompIdx = lastComp ? (branchEntries as any[]).indexOf(lastComp) : -1;
@@ -314,17 +424,10 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     const keptEntries = keptIdx >= 0
       ? (branchEntries as any[]).slice(keptIdx).filter((e: any) => e.type === "message")
       : [];
-    const keptChars = keptEntries.reduce((sum: number, e: any) => {
-      const c = e.message?.content;
-      if (typeof c === "string") return sum + c.length;
-      if (Array.isArray(c)) return sum + c.reduce((s: number, p: any) => {
-        if (p.text) return s + p.text.length;
-        if (p.type === "toolCall") return s + (p.name?.length ?? 0) + (typeof p.input === "string" ? p.input.length : JSON.stringify(p.input ?? "").length);
-        if (p.type === "toolResult") return s + (typeof p.content === "string" ? p.content.length : JSON.stringify(p.content ?? "").length);
-        return s;
-      }, 0);
-      return sum;
-    }, 0);
+    const keptChars = keptEntries.reduce(
+      (sum: number, e: any) => sum + messageContentChars(e.message?.content),
+      0,
+    );
     lastStats = {
       summarized: agentMessages.length,
       kept: keptEntries.length,
@@ -334,6 +437,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       keepUserTurnsExplicit,
       keepFallbackToCompactAll: ownCut.keepFallbackToCompactAll,
       keptTokensEst: Math.round(keptChars / 4),
+      smartKeepAdjusted: smartKeep.smartAdjusted,
+      smartFromKeep: smartKeep.fromKeep,
       reason,
       willRetry,
     };
