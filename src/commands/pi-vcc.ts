@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { formatCompactionStats, getLastCompactionStats } from "../hooks/before-compact";
+import { getLastCompactionStats, scheduleCompactionStatsNotify } from "../hooks/before-compact";
 import { buildPiVccCustomInstructions, parseKeepAndPrompt } from "../core/compact-args";
 
 export const registerPiVccCommand = (pi: ExtensionAPI) => {
@@ -12,7 +12,7 @@ export const registerPiVccCommand = (pi: ExtensionAPI) => {
         onComplete: () => {
           const stats = getLastCompactionStats();
           if (stats) {
-            ctx.ui.notify(formatCompactionStats(stats), "info");
+            scheduleCompactionStatsNotify(ctx, stats);
           } else {
             ctx.ui.notify("Compacted with pi-vcc", "info");
           }

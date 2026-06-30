@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { registerPiVccCommand } from "../src/commands/pi-vcc";
-import { PI_VCC_COMPACT_INSTRUCTION } from "../src/hooks/before-compact";
+import { PI_VCC_COMPACT_INSTRUCTION, registerBeforeCompactHook } from "../src/hooks/before-compact";
 
 type CompactOptions = {
   customInstructions?: string;
@@ -94,6 +94,66 @@ describe("registerPiVccCommand", () => {
     compactCalls[0].onComplete?.();
 
     expect(userMessages).toEqual(["continue"]);
+  });
+
+  test("schedules metric notify even when /pi-vcc follow-up starts immediately", async () => {
+    let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
+    let beforeHandler: ((event: any, ctx: any) => any) | undefined;
+    const compactCalls: CompactOptions[] = [];
+    const notifyCalls: Array<{ msg: string; level: string }> = [];
+    const userMessages: Array<string | unknown[]> = [];
+
+    const pi = {
+      registerCommand: (name: string, command: { handler: typeof commandHandler }) => {
+        expect(name).toBe("pi-vcc");
+        commandHandler = command.handler;
+      },
+      on: (eventName: string, h: (event: any, ctx: any) => any) => {
+        if (eventName === "session_before_compact") beforeHandler = h;
+      },
+      sendUserMessage: (content: string | unknown[]) => {
+        userMessages.push(content);
+        return new Promise(() => {});
+      },
+    } as any;
+
+    const ctx = {
+      compact: (options: CompactOptions) => {
+        compactCalls.push(options);
+      },
+      ui: {
+        notify: (msg: string, level: string) => {
+          notifyCalls.push({ msg, level });
+        },
+      },
+    };
+
+    registerBeforeCompactHook(pi);
+    registerPiVccCommand(pi);
+    await commandHandler!("continue", ctx);
+    beforeHandler!({
+      type: "session_before_compact",
+      customInstructions: compactCalls[0].customInstructions,
+      branchEntries: [
+        { id: "m1", type: "message", message: { role: "user", content: "one" } },
+        { id: "m2", type: "message", message: { role: "assistant", content: "reply one" } },
+        { id: "m3", type: "message", message: { role: "user", content: "two" } },
+        { id: "m4", type: "message", message: { role: "assistant", content: "reply two" } },
+      ],
+      preparation: {
+        previousSummary: undefined,
+        fileOps: { read: [], written: [], edited: [] },
+        tokensBefore: 1000,
+      },
+      signal: new AbortController().signal,
+    }, ctx);
+
+    compactCalls[0].onComplete?.();
+    expect(userMessages).toEqual(["continue"]);
+    expect(notifyCalls).toEqual([]);
+
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    expect(notifyCalls.some((call) => call.msg.includes("tail kept 1/2 user turns (2 messages,"))).toBe(true);
   });
 
   test("handles rejected follow-up send without throwing", async () => {

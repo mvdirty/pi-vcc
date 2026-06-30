@@ -81,6 +81,17 @@ const readCompactionEventContext = (event: unknown): { reason?: CompactionReason
   return { reason, willRetry: raw.willRetry === true };
 };
 
+export const scheduleCompactionStatsNotify = (ctx: any, stats: CompactionStats) => {
+  setTimeout(() => {
+    try {
+      ctx?.ui?.notify?.(
+        formatCompactionStats(stats),
+        "info",
+      );
+    } catch {}
+  }, 500);
+};
+
 const parseCompactionInstructions = (customInstructions?: string): {
   isPiVcc: boolean;
   keepUserTurns: number;
@@ -543,14 +554,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     const stats = lastStats;
     if (!stats) return;
     const shouldContinueAfterAutoCompact = (reason === "threshold" || reason === "overflow") && loadSettings().continueAfterThresholdCompact;
-    setTimeout(() => {
-      try {
-        ctx?.ui?.notify?.(
-          formatCompactionStats(stats),
-          "info",
-        );
-      } catch {}
-    }, 500);
+    scheduleCompactionStatsNotify(ctx, stats);
     if (followUpPrompt) {
       try {
         await pi.sendUserMessage(followUpPrompt);
