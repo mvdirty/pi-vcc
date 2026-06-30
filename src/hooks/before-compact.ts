@@ -29,25 +29,25 @@ export interface CompactionStats {
 let lastStats: CompactionStats | null = null;
 let lastCompactWasPiVcc = false;
 let pendingFollowUpPrompt: string | null = null;
-const THRESHOLD_CONTINUE_CUSTOM_TYPE = "pi-vcc-threshold-continue";
-const THRESHOLD_CONTINUE_PROMPT = "Continue from where you left off after automatic context compaction. Do not restate the compaction summary; proceed with the task.";
-let pendingThresholdContinueTimer: ReturnType<typeof setTimeout> | null = null;
+const AUTO_CONTINUE_CUSTOM_TYPE = "pi-vcc-auto-continue";
+const AUTO_CONTINUE_PROMPT = "Continue from where you left off after automatic context compaction. Do not restate the compaction summary; proceed with the task.";
+let pendingAutoContinueTimer: ReturnType<typeof setTimeout> | null = null;
 
-const clearPendingThresholdContinue = () => {
-  if (pendingThresholdContinueTimer) {
-    clearTimeout(pendingThresholdContinueTimer);
-    pendingThresholdContinueTimer = null;
+const clearPendingAutoContinue = () => {
+  if (pendingAutoContinueTimer) {
+    clearTimeout(pendingAutoContinueTimer);
+    pendingAutoContinueTimer = null;
   }
 };
 
-const scheduleThresholdContinue = (pi: any) => {
-  clearPendingThresholdContinue();
-  pendingThresholdContinueTimer = setTimeout(async () => {
-    pendingThresholdContinueTimer = null;
+const scheduleAutoContinue = (pi: any) => {
+  clearPendingAutoContinue();
+  pendingAutoContinueTimer = setTimeout(async () => {
+    pendingAutoContinueTimer = null;
     try {
       await Promise.resolve(pi.sendMessage({
-        customType: THRESHOLD_CONTINUE_CUSTOM_TYPE,
-        content: THRESHOLD_CONTINUE_PROMPT,
+        customType: AUTO_CONTINUE_CUSTOM_TYPE,
+        content: AUTO_CONTINUE_PROMPT,
         display: false,
       }, { triggerTurn: true }));
     } catch {}
@@ -349,7 +349,7 @@ const REASON_MESSAGES: Record<OwnCutCancelReason, string> = {
 
 export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
   pi.on("before_agent_start", () => {
-    clearPendingThresholdContinue();
+    clearPendingAutoContinue();
   });
 
   pi.on("session_before_compact", (event, ctx) => {
@@ -539,16 +539,16 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     const followUpPrompt = pendingFollowUpPrompt;
     pendingFollowUpPrompt = null;
     if (lastCompactWasPiVcc) return; // /pi-vcc handles its own toast via onComplete
-    if (reason === "overflow" || willRetry) return;
+    if (willRetry) return;
     const stats = lastStats;
     if (!stats) return;
-    const shouldContinueAfterThreshold = reason === "threshold" && loadSettings().continueAfterThresholdCompact;
+    const shouldContinueAfterAutoCompact = (reason === "threshold" || reason === "overflow") && loadSettings().continueAfterThresholdCompact;
     if (followUpPrompt) {
       try {
         await pi.sendUserMessage(followUpPrompt);
       } catch {}
-    } else if (shouldContinueAfterThreshold) {
-      scheduleThresholdContinue(pi);
+    } else if (shouldContinueAfterAutoCompact) {
+      scheduleAutoContinue(pi);
     }
     setTimeout(() => {
       try {
