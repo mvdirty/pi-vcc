@@ -29,6 +29,8 @@ export interface CompactionStats {
 let lastStats: CompactionStats | null = null;
 let lastCompactWasPiVcc = false;
 let pendingFollowUpPrompt: string | null = null;
+const THRESHOLD_CONTINUE_CUSTOM_TYPE = "pi-vcc-threshold-continue";
+const THRESHOLD_CONTINUE_PROMPT = "Continue from where you left off after automatic context compaction. Do not restate the compaction summary; proceed with the task.";
 export const getLastCompactionStats = () => lastStats;
 
 const formatTokens = (n: number): string => {
@@ -513,9 +515,18 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     if (reason === "overflow" || willRetry) return;
     const stats = lastStats;
     if (!stats) return;
+    const shouldContinueAfterThreshold = reason === "threshold" && loadSettings().continueAfterThresholdCompact;
     if (followUpPrompt) {
       try {
         await pi.sendUserMessage(followUpPrompt);
+      } catch {}
+    } else if (shouldContinueAfterThreshold) {
+      try {
+        await Promise.resolve(pi.sendMessage({
+          customType: THRESHOLD_CONTINUE_CUSTOM_TYPE,
+          content: THRESHOLD_CONTINUE_PROMPT,
+          display: false,
+        }, { triggerTurn: true }));
       } catch {}
     }
     setTimeout(() => {

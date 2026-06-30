@@ -27,6 +27,13 @@ export interface PiVccSettings {
    * is always respected and never adjusted.
    */
   smartKeepTail: boolean;
+  /**
+   * When true (default), pi-vcc asks the agent to continue after an automatic
+   * threshold compaction. This avoids a UX cliff where the agent finishes a
+   * response, immediately compacts, and then stops instead of continuing the task.
+   * Overflow retry is still owned by pi-core via willRetry.
+   */
+  continueAfterThresholdCompact: boolean;
   /** Write debug snapshot to /tmp/pi-vcc-debug.json on each compaction. */
   debug: boolean;
 }
@@ -34,6 +41,7 @@ export interface PiVccSettings {
 export const DEFAULT_SETTINGS: PiVccSettings = {
   overrideDefaultCompaction: false,
   smartKeepTail: true,
+  continueAfterThresholdCompact: true,
   debug: false,
 };
 

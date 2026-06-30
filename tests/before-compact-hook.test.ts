@@ -25,6 +25,7 @@ function createMockPi() {
   let compactHandler: ((event: any, ctx: any) => any) | undefined;
   const notifyCalls: Array<{ msg: string; level: string }> = [];
   const userMessages: Array<string | unknown[]> = [];
+  const customMessages: Array<{ message: any; options: any }> = [];
   const ctx = {
     hasUI: true,
     ui: {
@@ -42,11 +43,15 @@ function createMockPi() {
       sendUserMessage: (content: string | unknown[]) => {
         userMessages.push(content);
       },
+      sendMessage: (message: any, options: any) => {
+        customMessages.push({ message, options });
+      },
     } as any,
     invokeBefore: (event: any) => beforeHandler!(event, ctx),
     invokeCompact: (event: any) => compactHandler!(event, ctx),
     notifyCalls,
     userMessages,
+    customMessages,
   };
 }
  
@@ -236,6 +241,37 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     expect(getLastCompactionStats()).toMatchObject({ reason: "threshold", willRetry: false });
   });
 
+  test("threshold compact auto-continues by default with hidden custom message", async () => {
+    setConfig({ debug: false, overrideDefaultCompaction: true });
+    const { pi, invokeBefore, invokeCompact, customMessages, userMessages } = createMockPi();
+    registerBeforeCompactHook(pi);
+
+    const entries = [msg("m1", "user"), msg("m2", "assistant"), msg("m3", "user"), msg("m4", "assistant")];
+    invokeBefore(makeEvent(entries, undefined, { reason: "threshold", willRetry: false }));
+    await invokeCompact({ type: "session_compact", fromExtension: true, reason: "threshold", willRetry: false });
+
+    expect(userMessages).toEqual([]);
+    expect(customMessages).toHaveLength(1);
+    expect(customMessages[0].options).toEqual({ triggerTurn: true });
+    expect(customMessages[0].message).toMatchObject({
+      customType: "pi-vcc-threshold-continue",
+      display: false,
+    });
+    expect(customMessages[0].message.content).toContain("Continue from where you left off");
+  });
+
+  test("threshold compact continuation can be disabled", async () => {
+    setConfig({ debug: false, overrideDefaultCompaction: true, continueAfterThresholdCompact: false });
+    const { pi, invokeBefore, invokeCompact, customMessages } = createMockPi();
+    registerBeforeCompactHook(pi);
+
+    const entries = [msg("m1", "user"), msg("m2", "assistant"), msg("m3", "user"), msg("m4", "assistant")];
+    invokeBefore(makeEvent(entries, undefined, { reason: "threshold", willRetry: false }));
+    await invokeCompact({ type: "session_compact", fromExtension: true, reason: "threshold", willRetry: false });
+
+    expect(customMessages).toEqual([]);
+  });
+
   test("override=true + customInstructions sends follow-up user message after compact", async () => {
     setConfig({ debug: false, overrideDefaultCompaction: true });
     const { pi, invokeBefore, invokeCompact, userMessages, notifyCalls } = createMockPi();
@@ -299,7 +335,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
 
   test("session_compact overflow retry does not send follow-up prompt", async () => {
     setConfig({ debug: false, overrideDefaultCompaction: true });
-    const { pi, invokeBefore, invokeCompact, userMessages, notifyCalls } = createMockPi();
+    const { pi, invokeBefore, invokeCompact, userMessages, customMessages, notifyCalls } = createMockPi();
     registerBeforeCompactHook(pi);
 
     const entries = [msg("m1", "user"), msg("m2", "assistant"), msg("m3", "user"), msg("m4", "assistant")];
@@ -308,6 +344,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     await new Promise((resolve) => setTimeout(resolve, 550));
 
     expect(userMessages).toEqual([]);
+    expect(customMessages).toEqual([]);
     expect(notifyCalls).toEqual([]);
   });
 
