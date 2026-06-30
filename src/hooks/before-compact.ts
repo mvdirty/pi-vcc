@@ -45,11 +45,11 @@ const scheduleAutoContinue = (pi: any) => {
   pendingAutoContinueTimer = setTimeout(async () => {
     pendingAutoContinueTimer = null;
     try {
-      await Promise.resolve(pi.sendMessage({
+      await pi.sendMessage({
         customType: AUTO_CONTINUE_CUSTOM_TYPE,
         content: AUTO_CONTINUE_PROMPT,
         display: false,
-      }, { triggerTurn: true }));
+      }, { triggerTurn: true });
     } catch {}
   }, 0);
 };

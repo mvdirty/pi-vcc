@@ -120,10 +120,10 @@ const capBriefToLineBudget = (text: string, maxLines: number): string => {
   if (!text || maxLines <= 0) return "";
   const lines = text.split("\n");
   if (lines.length <= maxLines) return text;
-  const omitted = lines.length - maxLines;
   const kept = lines.slice(-maxLines);
   const firstHeader = kept.findIndex((l) => /^\[.+\]/.test(l));
   const clean = firstHeader > 0 ? kept.slice(firstHeader) : kept;
+  const omitted = lines.length - clean.length;
   return `...(${omitted} earlier lines omitted)\n\n${clean.join("\n")}`;
 };
 

@@ -84,6 +84,7 @@ const significantWordSpans = (flat: string): { start: number; end: number }[] =>
 
 const truncateTokensHeadTail = (text: string, headLimit: number, tailLimit: number): string => {
   const flat = normalizeForTokenBudget(text);
+  if (headLimit <= 0 || tailLimit <= 0) return flat;
   const words = significantWordSpans(flat);
   if (words.length <= headLimit + tailLimit) return flat;
   const head = flat.slice(0, words[headLimit - 1].end).trimEnd();
