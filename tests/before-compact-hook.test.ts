@@ -23,6 +23,7 @@ afterAll(() => {
 function createMockPi() {
   let beforeHandler: ((event: any, ctx: any) => any) | undefined;
   let compactHandler: ((event: any, ctx: any) => any) | undefined;
+  let beforeAgentStartHandler: ((event: any, ctx: any) => any) | undefined;
   const notifyCalls: Array<{ msg: string; level: string }> = [];
   const userMessages: Array<string | unknown[]> = [];
   const customMessages: Array<{ message: any; options: any }> = [];
@@ -39,6 +40,7 @@ function createMockPi() {
       on: (eventName: string, h: (e: any, c: any) => any) => {
         if (eventName === "session_before_compact") beforeHandler = h;
         if (eventName === "session_compact") compactHandler = h;
+        if (eventName === "before_agent_start") beforeAgentStartHandler = h;
       },
       sendUserMessage: (content: string | unknown[]) => {
         userMessages.push(content);
@@ -49,6 +51,7 @@ function createMockPi() {
     } as any,
     invokeBefore: (event: any) => beforeHandler!(event, ctx),
     invokeCompact: (event: any) => compactHandler!(event, ctx),
+    invokeBeforeAgentStart: (event: any = { type: "before_agent_start", prompt: "next", systemPrompt: "", systemPromptOptions: {} }) => beforeAgentStartHandler?.(event, ctx),
     notifyCalls,
     userMessages,
     customMessages,
@@ -249,6 +252,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     const entries = [msg("m1", "user"), msg("m2", "assistant"), msg("m3", "user"), msg("m4", "assistant")];
     invokeBefore(makeEvent(entries, undefined, { reason: "threshold", willRetry: false }));
     await invokeCompact({ type: "session_compact", fromExtension: true, reason: "threshold", willRetry: false });
+    await new Promise((resolve) => setTimeout(resolve, 5));
 
     expect(userMessages).toEqual([]);
     expect(customMessages).toHaveLength(1);
@@ -260,6 +264,20 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     expect(customMessages[0].message.content).toContain("Continue from where you left off");
   });
 
+  test("threshold compact continuation is canceled when a real user prompt starts", async () => {
+    setConfig({ debug: false, overrideDefaultCompaction: true });
+    const { pi, invokeBefore, invokeCompact, invokeBeforeAgentStart, customMessages } = createMockPi();
+    registerBeforeCompactHook(pi);
+
+    const entries = [msg("m1", "user"), msg("m2", "assistant"), msg("m3", "user"), msg("m4", "assistant")];
+    invokeBefore(makeEvent(entries, undefined, { reason: "threshold", willRetry: false }));
+    await invokeCompact({ type: "session_compact", fromExtension: true, reason: "threshold", willRetry: false });
+    invokeBeforeAgentStart();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(customMessages).toEqual([]);
+  });
+
   test("threshold compact continuation can be disabled", async () => {
     setConfig({ debug: false, overrideDefaultCompaction: true, continueAfterThresholdCompact: false });
     const { pi, invokeBefore, invokeCompact, customMessages } = createMockPi();
@@ -268,6 +286,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     const entries = [msg("m1", "user"), msg("m2", "assistant"), msg("m3", "user"), msg("m4", "assistant")];
     invokeBefore(makeEvent(entries, undefined, { reason: "threshold", willRetry: false }));
     await invokeCompact({ type: "session_compact", fromExtension: true, reason: "threshold", willRetry: false });
+    await new Promise((resolve) => setTimeout(resolve, 5));
 
     expect(customMessages).toEqual([]);
   });

@@ -31,6 +31,29 @@ let lastCompactWasPiVcc = false;
 let pendingFollowUpPrompt: string | null = null;
 const THRESHOLD_CONTINUE_CUSTOM_TYPE = "pi-vcc-threshold-continue";
 const THRESHOLD_CONTINUE_PROMPT = "Continue from where you left off after automatic context compaction. Do not restate the compaction summary; proceed with the task.";
+let pendingThresholdContinueTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearPendingThresholdContinue = () => {
+  if (pendingThresholdContinueTimer) {
+    clearTimeout(pendingThresholdContinueTimer);
+    pendingThresholdContinueTimer = null;
+  }
+};
+
+const scheduleThresholdContinue = (pi: any) => {
+  clearPendingThresholdContinue();
+  pendingThresholdContinueTimer = setTimeout(async () => {
+    pendingThresholdContinueTimer = null;
+    try {
+      await Promise.resolve(pi.sendMessage({
+        customType: THRESHOLD_CONTINUE_CUSTOM_TYPE,
+        content: THRESHOLD_CONTINUE_PROMPT,
+        display: false,
+      }, { triggerTurn: true }));
+    } catch {}
+  }, 0);
+};
+
 export const getLastCompactionStats = () => lastStats;
 
 const formatTokens = (n: number): string => {
@@ -325,6 +348,10 @@ const REASON_MESSAGES: Record<OwnCutCancelReason, string> = {
 };
 
 export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
+  pi.on("before_agent_start", () => {
+    clearPendingThresholdContinue();
+  });
+
   pi.on("session_before_compact", (event, ctx) => {
     const { preparation, branchEntries, customInstructions } = event;
     const { reason, willRetry } = readCompactionEventContext(event);
@@ -521,13 +548,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
         await pi.sendUserMessage(followUpPrompt);
       } catch {}
     } else if (shouldContinueAfterThreshold) {
-      try {
-        await Promise.resolve(pi.sendMessage({
-          customType: THRESHOLD_CONTINUE_CUSTOM_TYPE,
-          content: THRESHOLD_CONTINUE_PROMPT,
-          display: false,
-        }, { triggerTurn: true }));
-      } catch {}
+      scheduleThresholdContinue(pi);
     }
     setTimeout(() => {
       try {
