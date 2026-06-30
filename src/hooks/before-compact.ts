@@ -543,13 +543,6 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     const stats = lastStats;
     if (!stats) return;
     const shouldContinueAfterAutoCompact = (reason === "threshold" || reason === "overflow") && loadSettings().continueAfterThresholdCompact;
-    if (followUpPrompt) {
-      try {
-        await pi.sendUserMessage(followUpPrompt);
-      } catch {}
-    } else if (shouldContinueAfterAutoCompact) {
-      scheduleAutoContinue(pi);
-    }
     setTimeout(() => {
       try {
         ctx?.ui?.notify?.(
@@ -558,5 +551,12 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
         );
       } catch {}
     }, 500);
+    if (followUpPrompt) {
+      try {
+        await pi.sendUserMessage(followUpPrompt);
+      } catch {}
+    } else if (shouldContinueAfterAutoCompact) {
+      scheduleAutoContinue(pi);
+    }
   });
 };

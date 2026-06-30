@@ -336,6 +336,24 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     expect(notifyCalls.some((call) => call.msg.includes("tail kept 1/2 user turns (2 messages,"))).toBe(true);
   });
 
+  test("follow-up prompt does not block compact metrics notify", async () => {
+    setConfig({ debug: false, overrideDefaultCompaction: true });
+    const { pi, invokeBefore, invokeCompact, userMessages, notifyCalls } = createMockPi();
+    pi.sendUserMessage = (content: string | unknown[]) => {
+      userMessages.push(content);
+      return new Promise(() => {});
+    };
+    registerBeforeCompactHook(pi);
+    const entries = [msg("m1", "user"), msg("m2", "assistant"), msg("m3", "user"), msg("m4", "assistant")];
+    invokeBefore(makeEvent(entries, "continue"));
+
+    invokeCompact({ type: "session_compact", fromExtension: true });
+    await new Promise((resolve) => setTimeout(resolve, 550));
+
+    expect(userMessages).toEqual(["continue"]);
+    expect(notifyCalls.some((call) => call.msg.includes("tail kept 1/2 user turns (2 messages,"))).toBe(true);
+  });
+
   test("override=true + /compact keep prefix keeps requested turns and strips follow-up", async () => {
     setConfig({ debug: false, overrideDefaultCompaction: true });
     const { pi, invokeBefore, invokeCompact, userMessages } = createMockPi();
