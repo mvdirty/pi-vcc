@@ -4,6 +4,7 @@ import { writeFileSync } from "fs";
 import { compile } from "../core/summarize";
 import { parseKeepAndPrompt, PI_VCC_COMPACT_INSTRUCTION } from "../core/compact-args";
 import { loadSettings, type PiVccSettings } from "../core/settings";
+import { estimateMessageContentChars, estimateTokensFromChars } from "../core/token-estimate";
 import type { PiVccCompactionDetails } from "../details";
 import type { CompactionReason } from "../types";
 
@@ -148,18 +149,6 @@ const previewContent = (content: unknown): string => {
       .slice(0, 300);
   }
   return "";
-};
-
-/** Estimate char length of a single message content (string or content-parts array). */
-const messageContentChars = (content: unknown): number => {
-  if (typeof content === "string") return content.length;
-  if (Array.isArray(content)) return content.reduce((s: number, p: any) => {
-    if (p.text) return s + p.text.length;
-    if (p.type === "toolCall") return s + (p.name?.length ?? 0) + (typeof p.input === "string" ? p.input.length : JSON.stringify(p.input ?? "").length);
-    if (p.type === "toolResult") return s + (typeof p.content === "string" ? p.content.length : JSON.stringify(p.content ?? "").length);
-    return s;
-  }, 0);
-  return 0;
 };
 
 interface EntryWithMessage {
@@ -308,10 +297,10 @@ const tailTokensForKeep = (branchEntries: any[], keepUserTurns: number): number 
   if (idx < 0) return null;
   const kept = branchEntries.slice(idx).filter((e: any) => e.type === "message");
   const chars = kept.reduce(
-    (sum: number, e: any) => sum + messageContentChars(e.message?.content),
+    (sum: number, e: any) => sum + estimateMessageContentChars(e.message?.content),
     0,
   );
-  return Math.round(chars / 4);
+  return estimateTokensFromChars(chars);
 };
 
 /**
@@ -465,7 +454,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       ? (branchEntries as any[]).slice(keptIdx).filter((e: any) => e.type === "message")
       : [];
     const keptChars = keptEntries.reduce(
-      (sum: number, e: any) => sum + messageContentChars(e.message?.content),
+      (sum: number, e: any) => sum + estimateMessageContentChars(e.message?.content),
       0,
     );
     lastStats = {
@@ -476,7 +465,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       requestedKeepUserTurns: ownCut.requestedKeepUserTurns,
       keepUserTurnsExplicit,
       keepFallbackToCompactAll: ownCut.keepFallbackToCompactAll,
-      keptTokensEst: Math.round(keptChars / 4),
+      keptTokensEst: estimateTokensFromChars(keptChars),
       smartKeepAdjusted: smartKeep.smartAdjusted,
       smartFromKeep: smartKeep.fromKeep,
       reason,

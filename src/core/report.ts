@@ -5,6 +5,7 @@ import { normalize } from "./normalize";
 import { renderMessage } from "./render-entries";
 import { searchEntries } from "./search-entries";
 import { type CompileInput, compile } from "./summarize";
+import { estimateTokensFromChars } from "./token-estimate";
 
 const SECTION_HEADERS = ["Session Goal", "Files And Changes", "Commits", "Outstanding Context"];
 
@@ -59,9 +60,6 @@ export interface CompactReport {
     probes: RecallProbe[];
   };
 }
-
-const estimateTokensFromChars = (chars: number): number =>
-  Math.ceil(chars / 4);
 
 const countRoles = (messages: Message[]): RoleCounts => {
   const counts: RoleCounts = { user: 0, assistant: 0, toolResult: 0 };
