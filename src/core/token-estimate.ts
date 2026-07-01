@@ -1,7 +1,46 @@
-const APPROX_CHARS_PER_TOKEN = 4;
+export const DEFAULT_CHARS_PER_TOKEN = 4;
+export const MIN_CHARS_PER_TOKEN = 2;
+export const MAX_CHARS_PER_TOKEN = 6;
 
-export const estimateTokensFromChars = (chars: number): number =>
-  Math.ceil(chars / APPROX_CHARS_PER_TOKEN);
+export type TokenEstimateMode = "heuristic" | "calibrated";
+
+export interface TokenEstimateCalibration {
+  mode: TokenEstimateMode;
+  charsPerToken: number;
+  sourceChars?: number;
+  sourceTokens?: number;
+  rawCharsPerToken?: number;
+}
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+export const calibrateCharsPerToken = (
+  sourceChars: number,
+  sourceTokens: number | undefined,
+): TokenEstimateCalibration => {
+  if (!sourceTokens || sourceTokens <= 0 || sourceChars <= 0) {
+    return { mode: "heuristic", charsPerToken: DEFAULT_CHARS_PER_TOKEN };
+  }
+
+  const rawCharsPerToken = sourceChars / sourceTokens;
+  if (!Number.isFinite(rawCharsPerToken) || rawCharsPerToken <= 0) {
+    return { mode: "heuristic", charsPerToken: DEFAULT_CHARS_PER_TOKEN };
+  }
+
+  return {
+    mode: "calibrated",
+    charsPerToken: clamp(rawCharsPerToken, MIN_CHARS_PER_TOKEN, MAX_CHARS_PER_TOKEN),
+    sourceChars,
+    sourceTokens,
+    rawCharsPerToken,
+  };
+};
+
+export const estimateTokensFromChars = (
+  chars: number,
+  charsPerToken = DEFAULT_CHARS_PER_TOKEN,
+): number => Math.ceil(chars / charsPerToken);
 
 /** Estimate char length of a single message content (string or content-parts array). */
 export const estimateMessageContentChars = (content: unknown): number => {
@@ -25,5 +64,7 @@ export const estimateMessageContentChars = (content: unknown): number => {
   return 0;
 };
 
-export const estimateMessageContentTokens = (content: unknown): number =>
-  estimateTokensFromChars(estimateMessageContentChars(content));
+export const estimateMessageContentTokens = (
+  content: unknown,
+  charsPerToken = DEFAULT_CHARS_PER_TOKEN,
+): number => estimateTokensFromChars(estimateMessageContentChars(content), charsPerToken);

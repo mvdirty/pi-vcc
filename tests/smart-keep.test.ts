@@ -184,4 +184,29 @@ describe("resolveSmartKeepUserTurns", () => {
     expect(r.smartAdjusted).toBe(true);
     expect(r.fromKeep).toBe(1);
   });
+
+  test("uses calibrated chars/token ratio when estimating tail size", () => {
+    const entries = [
+      msg("u1", "user", tokenContent(3)),
+      msg("a1", "assistant", tokenContent(3)),
+      msg("u2", "user", tokenContent(3)),
+      msg("a2", "assistant", tokenContent(3)),
+      msg("u3", "user", tokenContent(3)),
+      msg("a3", "assistant", tokenContent(3)),
+    ];
+    const r = resolveSmartKeepUserTurns({
+      branchEntries: entries,
+      requestedKeepUserTurns: null,
+      explicit: false,
+      smartKeepTail: true,
+      minTokens: 10,
+      maxTokens: 20,
+      charsPerToken: 2,
+    });
+
+    // With default 4 chars/token: keep:1 is 6 tokens and keep:2 is 12, so it would boost.
+    // Calibrated 2 chars/token makes keep:1 already 12 tokens (> minTokens=10), so it stays at 1.
+    expect(r.keepUserTurns).toBe(1);
+    expect(r.smartAdjusted).toBe(false);
+  });
 });

@@ -4,7 +4,7 @@ import { writeFileSync } from "fs";
 import { compile } from "../core/summarize";
 import { parseKeepAndPrompt, PI_VCC_COMPACT_INSTRUCTION } from "../core/compact-args";
 import { loadSettings, type PiVccSettings } from "../core/settings";
-import { estimateMessageContentChars, estimateTokensFromChars } from "../core/token-estimate";
+import { calibrateCharsPerToken, estimateMessageContentChars, estimateTokensFromChars } from "../core/token-estimate";
 import type { PiVccCompactionDetails } from "../details";
 import type { CompactionReason } from "../types";
 
@@ -275,6 +275,8 @@ export interface ResolveSmartKeepOptions {
   /** Injectable thresholds for tests. */
   minTokens?: number;
   maxTokens?: number;
+  /** Calibrated chars/token for the current session; defaults to heuristic when omitted. */
+  charsPerToken?: number;
 }
 
 export interface ResolveSmartKeepResult {
@@ -290,7 +292,7 @@ export interface ResolveSmartKeepResult {
  * so the resolver can stop growing instead of selecting a value that
  * discards the tail entirely.
  */
-const tailTokensForKeep = (branchEntries: any[], keepUserTurns: number): number | null => {
+const tailTokensForKeep = (branchEntries: any[], keepUserTurns: number, charsPerToken?: number): number | null => {
   const cut = buildOwnCut(branchEntries, keepUserTurns);
   if (!cut.ok || cut.compactAll) return null;
   const idx = branchEntries.findIndex((e: any) => e.id === cut.firstKeptEntryId);
@@ -300,7 +302,7 @@ const tailTokensForKeep = (branchEntries: any[], keepUserTurns: number): number 
     (sum: number, e: any) => sum + estimateMessageContentChars(e.message?.content),
     0,
   );
-  return estimateTokensFromChars(chars);
+  return estimateTokensFromChars(chars, charsPerToken);
 };
 
 /**
@@ -319,7 +321,7 @@ export const resolveSmartKeepUserTurns = (opts: ResolveSmartKeepOptions): Resolv
     return { keepUserTurns: baseKeep, smartAdjusted: false, fromKeep: baseKeep };
   }
 
-  const baseTokens = tailTokensForKeep(opts.branchEntries, baseKeep);
+  const baseTokens = tailTokensForKeep(opts.branchEntries, baseKeep, opts.charsPerToken);
   // base tail already above min (or unmeasurable / compact-all) → don't grow.
   if (baseTokens == null || baseTokens > minTokens) {
     return { keepUserTurns: baseKeep, smartAdjusted: false, fromKeep: baseKeep };
@@ -330,7 +332,7 @@ export const resolveSmartKeepUserTurns = (opts: ResolveSmartKeepOptions): Resolv
 
   let selected = baseKeep;
   for (let k = baseKeep + 1; k <= totalUserTurns; k++) {
-    const tokens = tailTokensForKeep(opts.branchEntries, k);
+    const tokens = tailTokensForKeep(opts.branchEntries, k, opts.charsPerToken);
     if (tokens == null || tokens > maxTokens) break;
     selected = k;
   }
@@ -363,6 +365,21 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     pendingFollowUpPrompt = null;
     if (!isPiVcc && !settings.overrideDefaultCompaction) return;
 
+    const calibrationCut = buildOwnCut(branchEntries as any[], 0);
+    const calibrationMessageChars = calibrationCut.ok
+      ? calibrationCut.messages.reduce(
+          (sum: number, message: any) => sum + estimateMessageContentChars(message.content),
+          0,
+        )
+      : 0;
+    const calibrationSummaryChars = typeof preparation.previousSummary === "string"
+      ? preparation.previousSummary.length
+      : 0;
+    const tokenEstimate = calibrateCharsPerToken(
+      calibrationMessageChars + calibrationSummaryChars,
+      preparation.tokensBefore,
+    );
+
     // Smart keep-tail: boost default keep when the tail is small.
     // Explicit keep:N from the user is always respected (resolver no-ops).
     const smartKeep = resolveSmartKeepUserTurns({
@@ -370,6 +387,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       requestedKeepUserTurns: keepUserTurnsExplicit ? keepUserTurns : null,
       explicit: keepUserTurnsExplicit,
       smartKeepTail: settings.smartKeepTail,
+      charsPerToken: tokenEstimate.charsPerToken,
     });
     const ownCut = buildOwnCut(branchEntries as any[], smartKeep.keepUserTurns);
     if (!ownCut.ok) {
@@ -465,7 +483,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       requestedKeepUserTurns: ownCut.requestedKeepUserTurns,
       keepUserTurnsExplicit,
       keepFallbackToCompactAll: ownCut.keepFallbackToCompactAll,
-      keptTokensEst: estimateTokensFromChars(keptChars),
+      keptTokensEst: estimateTokensFromChars(keptChars, tokenEstimate.charsPerToken),
       smartKeepAdjusted: smartKeep.smartAdjusted,
       smartFromKeep: smartKeep.fromKeep,
       reason,
@@ -504,6 +522,7 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       firstKeptEntryId,
       cutWindow,
       tokensBefore: preparation.tokensBefore,
+      tokenEstimate,
       summaryLength: summary.length,
       summaryPreview: summary.slice(0, 500),
       sections: [...summary.matchAll(/^\[(.+?)\]/gm)].map((m) => m[1]),

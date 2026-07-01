@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { estimateMessageContentChars, estimateMessageContentTokens, estimateTokensFromChars } from "../src/core/token-estimate";
+import {
+  calibrateCharsPerToken,
+  estimateMessageContentChars,
+  estimateMessageContentTokens,
+  estimateTokensFromChars,
+} from "../src/core/token-estimate";
 
 describe("token estimate", () => {
   test("estimates tokens from chars with ceil to avoid undercounting", () => {
@@ -7,6 +12,30 @@ describe("token estimate", () => {
     expect(estimateTokensFromChars(1)).toBe(1);
     expect(estimateTokensFromChars(4)).toBe(1);
     expect(estimateTokensFromChars(5)).toBe(2);
+  });
+
+  test("supports calibrated chars/token ratios", () => {
+    expect(estimateTokensFromChars(5, 2)).toBe(3);
+    expect(estimateMessageContentTokens("abcde", 2)).toBe(3);
+  });
+
+  test("calibrates chars/token from source chars and tokens", () => {
+    expect(calibrateCharsPerToken(120, 40)).toMatchObject({
+      mode: "calibrated",
+      charsPerToken: 3,
+      sourceChars: 120,
+      sourceTokens: 40,
+      rawCharsPerToken: 3,
+    });
+  });
+
+  test("clamps calibrated ratios and falls back without usable source tokens", () => {
+    expect(calibrateCharsPerToken(10, 100).charsPerToken).toBe(2);
+    expect(calibrateCharsPerToken(1000, 10).charsPerToken).toBe(6);
+    expect(calibrateCharsPerToken(1000, 0)).toMatchObject({
+      mode: "heuristic",
+      charsPerToken: 4,
+    });
   });
 
   test("estimates message content chars from strings and content parts", () => {
