@@ -194,11 +194,15 @@ export const selectRankedBriefBlocks = (
     : blocks.map((b) => (b.kind === "tool_result" ? 0 : compileBrief([b]).length + 1));
   let usedChars = 0;
 
-  // Always keep the latest blocks to preserve local continuity. These anchor
-  // the brief and are charged against the budget but never dropped.
-  for (let i = Math.max(0, blocks.length - preserveRecentBlocks); i < blocks.length; i++) {
+  // Keep the latest blocks to preserve local continuity, iterating NEWEST first
+  // so the most recent context is guaranteed. When a char budget is active these
+  // are charged against it too and over-budget blocks are skipped -- otherwise a
+  // run of large recent blocks could blow past maxBriefChars (the old bug on very
+  // long transcripts, where preserve-recent alone exceeded the budget).
+  for (let i = blocks.length - 1; i >= Math.max(0, blocks.length - preserveRecentBlocks); i--) {
     if (blocks[i].kind === "tool_result") continue;
     if (selected.has(i)) continue;
+    if (costs && usedChars + costs[i] > maxBriefChars!) continue;
     selected.add(i);
     if (costs) usedChars += costs[i];
     const key = dedupKey(blocks[i]);

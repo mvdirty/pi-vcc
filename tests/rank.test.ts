@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { compile, compileRanked } from "../src/core/summarize";
 import { rankBriefBlocks, selectRankedBriefBlocks } from "../src/core/rank";
+import { compileBrief } from "../src/core/brief";
 import type { NormalizedBlock } from "../src/types";
 import { assistantText, assistantWithToolCall, userMsg } from "./fixtures";
 
@@ -152,5 +153,49 @@ describe("section-aware brief ranking prototype", () => {
     expect(ranked).toContain("Fresh ranked fix passed tests.");
     expect(ranked).toContain("old context 199");
     expect(ranked).not.toContain("old context 0");
+  });
+
+  it("charges preserve-recent blocks against the char budget so large recent runs cannot blow past it", () => {
+    // Regression: on very long transcripts the newest blocks alone could exceed
+    // maxBriefChars because preserve-recent was added unconditionally. They must
+    // now be charged against the budget (iterating newest-first) and skipped once full.
+    const blocks: NormalizedBlock[] = Array.from({ length: 8 }, (_, i) => ({
+      kind: "assistant" as const,
+      text: `recent block ${i} ` + "x".repeat(1200),
+    }));
+    const maxBriefChars = 3000;
+
+    const selected = selectRankedBriefBlocks(blocks, {
+      maxBlocks: 80,
+      preserveRecentBlocks: 8, // ask to preserve every block
+      maxBriefChars,
+    });
+    const rendered = compileBrief(selected);
+
+    // Budget is a true ceiling even though all candidates are "recent" blocks.
+    expect(rendered.length).toBeLessThanOrEqual(maxBriefChars);
+    // Newest block is always kept (recency preserved).
+    expect(selected).toContain(blocks[7]);
+    // ...but not everything fits, so oldest recent blocks are dropped.
+    expect(selected).not.toContain(blocks[0]);
+    expect(selected.length).toBeLessThan(blocks.length);
+  });
+
+  it("keeps the ranked brief within the char budget even when recent turns are huge", () => {
+    const huge = Array.from({ length: 10 }, (_, i) =>
+      assistantText(`huge recent turn ${i} ` + "y".repeat(900)),
+    );
+    const maxBriefChars = 3000;
+
+    const ranked = compileRanked({
+      messages: [userMsg("start a big task"), ...huge],
+      ranking: { maxBlocks: 80, preserveRecentBlocks: 10, maxBriefChars },
+    });
+    const brief = briefPart(ranked);
+
+    // Without the fix this brief would be ~9000+ chars; the budget caps it.
+    // Small slack covers the "...omitted" marker and line-wrap newlines.
+    expect(brief.length).toBeLessThanOrEqual(maxBriefChars + 400);
+    expect(brief.length).toBeGreaterThan(0);
   });
 });
