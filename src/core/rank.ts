@@ -52,6 +52,31 @@ const WORKFLOW_COMMAND_RE =
   /(?:^|\s)(?:gh\s+(?:pr|issue)\s+[a-z-]+|git\s+(?:commit|push|merge|rebase|revert|cherry-pick|tag|reset|checkout|branch)\b)/i;
 const MIN_SEGMENT_CLOSING_ASSISTANT_CHARS = 120;
 
+// A bash block whose every meaningful line is pure scaffolding (set -e, cd,
+// export, ls, echo, sleep, pwd, comments, heredoc bodies) carries no durable
+// fact. Such blocks get a score penalty so the size-relative budget never
+// pulls them in ahead of real edits/commands when spare chars appear.
+const TRIVIAL_BASH_LINE_RE =
+  /^(?:set\s+[-+]|cd(?:\s+\S+)?$|export\s+\w+=|(?:source|\.)\s+\S+|pwd$|true$|:$|#|ls(?:\s|$)|echo\b|clear$|sleep\b)/;
+const HEREDOC_OPEN_RE = /<<-?\s*["']?(\w+)["']?/;
+const TRIVIAL_BASH_PENALTY = 16;
+
+const isTrivialOnlyBash = (raw: string): boolean => {
+  const lines = raw.split("\n");
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    kept.push(lines[i]);
+    const hd = lines[i].match(HEREDOC_OPEN_RE);
+    if (hd) {
+      const term = hd[1];
+      i++;
+      while (i < lines.length && lines[i].trim() !== term) i++;
+    }
+  }
+  const meaningful = kept.map((l) => l.trim()).filter(Boolean).filter((l) => !TRIVIAL_BASH_LINE_RE.test(l));
+  return meaningful.length === 0;
+};
+
 const asPathSet = (paths?: string[]): Set<string> => new Set((paths ?? []).filter(Boolean));
 
 const bashCommandFromBlock = (block: NormalizedBlock): string | undefined => {
@@ -98,6 +123,7 @@ const scoreBlock = (
     else if (READ_TOOL_RE.test(block.name)) add(ranked, 6, "read-tool");
     else add(ranked, 12, "tool-call");
     if (command && WORKFLOW_COMMAND_RE.test(command)) add(ranked, 14, "workflow-command");
+    if (command && isTrivialOnlyBash(command)) add(ranked, -TRIVIAL_BASH_PENALTY, "trivial-bash");
   }
 
   if (block.kind === "bash") {
@@ -105,6 +131,11 @@ const scoreBlock = (
     if (block.exitCode != null && block.exitCode !== 0) add(ranked, 24, "nonzero-exit");
     if (TEST_COMMAND_RE.test(block.command)) add(ranked, 22, "test-command");
     if (WORKFLOW_COMMAND_RE.test(block.command)) add(ranked, 14, "workflow-command");
+    // Penalize scaffolding-only commands, but not ones that failed (a failed
+    // `ls`/`cd` still records a real state fact via nonzero-exit).
+    if (isTrivialOnlyBash(block.command) && !(block.exitCode != null && block.exitCode !== 0)) {
+      add(ranked, -TRIVIAL_BASH_PENALTY, "trivial-bash");
+    }
   }
 
   const path = pathFromBlock(block);

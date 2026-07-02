@@ -26,6 +26,28 @@ describe("section-aware brief ranking prototype", () => {
     expect(test.reasons).toContain("test-command");
   });
 
+  it("penalizes scaffolding-only bash so it ranks below substantive commands", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "bash", command: "set -euo pipefail\ncd /tmp/proj\nls -la", exitCode: 0 },
+      { kind: "bash", command: "set -euo pipefail\ngit commit -m \"fix\"\ngit push", exitCode: 0 },
+    ];
+    const ranked = rankBriefBlocks(blocks);
+    const scaffold = ranked[0];
+    const work = ranked[1];
+    expect(scaffold.reasons).toContain("trivial-bash");
+    expect(work.reasons).not.toContain("trivial-bash");
+    expect(work.score).toBeGreaterThan(scaffold.score);
+  });
+
+  it("does not penalize a scaffolding command that failed (nonzero exit is a real fact)", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "bash", command: "cd /tmp/missing", exitCode: 1 },
+    ];
+    const ranked = rankBriefBlocks(blocks);
+    expect(ranked[0].reasons).not.toContain("trivial-bash");
+    expect(ranked[0].reasons).toContain("nonzero-exit");
+  });
+
   it("selects ranked blocks chronologically after scoring", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "tool_call", name: "Read", args: { file_path: "noise-a.ts" } },
