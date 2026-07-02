@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import { writeFileSync } from "fs";
-import { compile } from "../core/summarize";
+import { compileRanked } from "../core/summarize";
 import { parseKeepAndPrompt, PI_VCC_COMPACT_INSTRUCTION } from "../core/compact-args";
 import { loadSettings, type PiVccSettings } from "../core/settings";
 import { calibrateCharsPerToken, estimateMessageContentChars, estimateTokensFromChars } from "../core/token-estimate";
@@ -492,12 +492,23 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
 
     const config = settings;
 
-    const summary = compile({
+    // Ranked compaction: keep the highest-signal blocks under a token budget
+    // instead of the old unranked compile() (fixed 120-line cap). The token
+    // budget is converted to a char budget via the session's calibrated
+    // charsPerToken so the summary targets ~RANKED_BRIEF_BUDGET_TOKENS tokens
+    // regardless of content density. Audit (research/audit, 794 sessions) at
+    // this operating point: size parity with the old cap, recall +2.4pp, and
+    // better fact density vs the unbudgeted ranked path (which bloated ~60%).
+    const RANKED_BRIEF_BUDGET_TOKENS = 1100;
+    const summary = compileRanked({
       messages,
       previousSummary: preparation.previousSummary,
       fileOps: {
         readFiles: [...preparation.fileOps.read],
         modifiedFiles: [...preparation.fileOps.written, ...preparation.fileOps.edited],
+      },
+      ranking: {
+        maxBriefChars: Math.round(RANKED_BRIEF_BUDGET_TOKENS * tokenEstimate.charsPerToken),
       },
     });
 

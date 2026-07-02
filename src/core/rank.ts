@@ -1,5 +1,6 @@
 import type { NormalizedBlock, FileOps } from "../types";
 import { extractPath } from "./tool-args";
+import { compileBrief } from "./brief";
 
 export interface BriefRankingOptions {
   /** Maximum normalized blocks used to build the brief transcript. */
@@ -8,6 +9,14 @@ export interface BriefRankingOptions {
   preserveRecentBlocks?: number;
   /** Hook-provided file activity, used as structural signal instead of prose guessing. */
   fileOps?: FileOps;
+  /**
+   * Optional size budget (in characters of rendered brief) for the selected
+   * blocks. When set, this is the PRIMARY limit: blocks are added by score
+   * until the budget is reached, and lower-value blocks are skipped rather
+   * than truncating the tail. maxBlocks still applies as a safety upper bound.
+   * Callers derive this from a token budget via charsPerToken.
+   */
+  maxBriefChars?: number;
 }
 
 export interface RankedBlock {
@@ -22,10 +31,12 @@ const DEFAULT_RECENT_BLOCKS = 16;
 
 const EDIT_TOOL_RE = /^(edit|write|multiedit|quick_edit|target_edit|apply_patch)$/i;
 const READ_TOOL_RE = /^(read|glob|grep|ls|find|semantic_query|semantic_grep|semantic_show)$/i;
-const NOISY_COMMAND_RE = /^(?:ls|pwd|find\b|grep\b|rg\b|cat\b|sed\b|awk\b|head\b|tail\b)/;
 const TEST_COMMAND_RE = /\b(?:bun|npm|pnpm|yarn|node|pytest|cargo|go|mvn|gradle)\b[^\n]*(?:test|spec|check|lint|build|tsc)/i;
-const LIGHT_HINT_RE = /\b(?:fail(?:ed|ing)?|error|exception|crash|broken|blocker|fixed|implemented|resolved|commit|preference|prefer|always|never)\b/i;
 const GH_PR_POLL_RE = /(?:^|\s)gh\s+pr\s+(?:view|checks)\s+(\d+)\b/i;
+// Durable workflow facts: which PR/issue was acted on, and git state changes.
+// Structural (command shape), not prose — same spirit as TEST_COMMAND_RE.
+const WORKFLOW_COMMAND_RE =
+  /(?:^|\s)(?:gh\s+(?:pr|issue)\s+[a-z-]+|git\s+(?:commit|push|merge|rebase|revert|cherry-pick|tag|reset|checkout|branch)\b)/i;
 const MIN_SEGMENT_CLOSING_ASSISTANT_CHARS = 120;
 
 const asPathSet = (paths?: string[]): Set<string> => new Set((paths ?? []).filter(Boolean));
@@ -73,15 +84,14 @@ const scoreBlock = (
     else if (command && TEST_COMMAND_RE.test(command)) add(ranked, 26, "test-command");
     else if (READ_TOOL_RE.test(block.name)) add(ranked, 6, "read-tool");
     else add(ranked, 12, "tool-call");
-    if (command && GH_PR_POLL_RE.test(command)) add(ranked, -10, "gh-pr-poll");
+    if (command && WORKFLOW_COMMAND_RE.test(command)) add(ranked, 14, "workflow-command");
   }
 
   if (block.kind === "bash") {
     add(ranked, 8, "bash");
     if (block.exitCode != null && block.exitCode !== 0) add(ranked, 24, "nonzero-exit");
     if (TEST_COMMAND_RE.test(block.command)) add(ranked, 22, "test-command");
-    if (NOISY_COMMAND_RE.test(block.command.trim())) add(ranked, -8, "exploration-command");
-    if (GH_PR_POLL_RE.test(block.command)) add(ranked, -10, "gh-pr-poll");
+    if (WORKFLOW_COMMAND_RE.test(block.command)) add(ranked, 14, "workflow-command");
   }
 
   const path = pathFromBlock(block);
@@ -89,13 +99,6 @@ const scoreBlock = (
     if (modifiedFiles.has(path)) add(ranked, 18, "hook-modified-file");
     if (readFiles.has(path)) add(ranked, 6, "hook-read-file");
   }
-
-  const text = block.kind === "user" || block.kind === "assistant" || block.kind === "tool_result"
-    ? block.text
-    : block.kind === "bash"
-      ? block.command
-      : JSON.stringify(block.args ?? {});
-  if (LIGHT_HINT_RE.test(text)) add(ranked, 5, "light-lexical-hint");
 
   if (block.kind === "tool_result" && block.text.length > 1000) add(ranked, -8, "long-tool-result");
   return ranked;
@@ -176,16 +179,28 @@ export const selectRankedBriefBlocks = (
   options: BriefRankingOptions = {},
 ): NormalizedBlock[] => {
   const maxBlocks = options.maxBlocks ?? DEFAULT_MAX_BLOCKS;
-  if (blocks.length <= maxBlocks) return blocks;
+  const maxBriefChars = options.maxBriefChars;
+  // Fast path: nothing to trim by count and no char budget to enforce.
+  if (blocks.length <= maxBlocks && maxBriefChars == null) return blocks;
 
   const preserveRecentBlocks = Math.min(options.preserveRecentBlocks ?? DEFAULT_RECENT_BLOCKS, maxBlocks);
   const ranked = rankBriefBlocks(blocks, options);
   const selected = new Set<number>();
   const seenKeys = new Set<string>();
 
+  // Per-block rendered size, only computed when a char budget is active.
+  const costs = maxBriefChars == null
+    ? null
+    : blocks.map((b) => (b.kind === "tool_result" ? 0 : compileBrief([b]).length + 1));
+  let usedChars = 0;
+
+  // Always keep the latest blocks to preserve local continuity. These anchor
+  // the brief and are charged against the budget but never dropped.
   for (let i = Math.max(0, blocks.length - preserveRecentBlocks); i < blocks.length; i++) {
     if (blocks[i].kind === "tool_result") continue;
+    if (selected.has(i)) continue;
     selected.add(i);
+    if (costs) usedChars += costs[i];
     const key = dedupKey(blocks[i]);
     if (key) seenKeys.add(key);
   }
@@ -193,9 +208,15 @@ export const selectRankedBriefBlocks = (
   const ordered = [...ranked].sort((a, b) => b.score - a.score || b.index - a.index);
   for (const item of ordered) {
     if (selected.size >= maxBlocks) break;
+    if (selected.has(item.index)) continue;
     if (item.block.kind === "tool_result") continue;
     const key = dedupKey(item.block);
     if (key && seenKeys.has(key)) continue;
+    if (costs) {
+      // Skip (not break) so smaller high-value blocks can still fit the budget.
+      if (usedChars + costs[item.index] > maxBriefChars!) continue;
+      usedChars += costs[item.index];
+    }
     selected.add(item.index);
     if (key) seenKeys.add(key);
   }

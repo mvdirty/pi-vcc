@@ -85,22 +85,13 @@ describe("section-aware brief ranking prototype", () => {
     expect(selected).not.toContain(blocks[4]);
   });
 
-  it("penalizes and deduplicates repeated gh PR polling commands", () => {
+  it("deduplicates repeated gh PR polling commands", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "user", text: "Merge PR 123 when green" },
       { kind: "tool_call", name: "bash", args: { command: "gh pr view 123 --json mergeStateStatus" } },
       { kind: "tool_call", name: "bash", args: { command: "gh pr checks 123 --watch" } },
       { kind: "tool_call", name: "bash", args: { command: "gh pr merge 123 --squash --delete-branch" } },
     ];
-    const ranked = rankBriefBlocks(blocks);
-    const view = ranked.find((r) => r.block === blocks[1])!;
-    const checks = ranked.find((r) => r.block === blocks[2])!;
-    const merge = ranked.find((r) => r.block === blocks[3])!;
-
-    expect(view.reasons).toContain("gh-pr-poll");
-    expect(checks.reasons).toContain("gh-pr-poll");
-    expect(merge.reasons).not.toContain("gh-pr-poll");
-
     const selected = selectRankedBriefBlocks(blocks, { maxBlocks: 3, preserveRecentBlocks: 0 });
     const pollCount = selected.filter((block) =>
       block.kind === "tool_call"
