@@ -23,20 +23,6 @@ Inspired by [VCC](https://github.com/lllyasviel/VCC) **(View-oriented Conversati
 | **Cost** | Burns tokens on summarization call | Zero — no API calls |
 | **Structure** | Free-form prose | Brief transcript + 4 semantic sections |
 
-### Real session metrics
-
-Measured on real session JSONLs under `~/.pi/agent/sessions` (chars = rendered message text).
-
-| Session | Messages | Before | After | Reduction | Time |
-|---|---|---|---|---|---|
-| Session A | 2,943 | 997,162 | 7,959 | 99.2% | 64ms |
-| Session B | 1,703 | 428,334 | 7,762 | 98.2% | 29ms |
-| Session C | 1,657 | 424,183 | 9,577 | 97.7% | 54ms |
-| Session D | 1,004 | 2,258,477 | 4,439 | 99.8% | 30ms |
-| Session E | 486 | 295,006 | 11,163 | 96.2% | 30ms |
-| Session F | 46 | 5,234 | 3,364 | 35.7% | 5ms |
-| Session G | 27 | 8,595 | 2,489 | 71.0% | 2ms |
-
 ## Features
 
 - **No LLM** — purely algorithmic, zero extra API cost
@@ -133,28 +119,19 @@ Sections appear only when relevant — a session with no git commits won't have 
 | `[User Preferences]` | Regex-extracted from user messages (`always`, `never`, `prefer`...) |
 | Brief transcript | Chronological conversation flow — rolling window of ~120 recent lines, tool calls collapsed to one-liners with `(#N)` refs |
 
-**Merge policy:**
-- `Session Goal`, `User Preferences`: concise sticky sections
-- `Outstanding Context`: fresh-only (replaced each compaction)
-- `Files And Changes`, `Commits`: unique union across compactions
-- Brief transcript: rolling window, older lines drop off
-
 ## Recall (Lossless History)
 
 Pi's default compaction discards old messages permanently. After compaction, the agent only sees the summary.
 
 `vcc_recall` bypasses this by reading the raw session JSONL file directly. By default it searches only the active conversation lineage, regardless of how many compactions have happened. Use `scope:"all"` only when you intentionally want to include off-lineage branches.
 
-### Search
-
 Queries support **regex** and **multi-word OR logic** ranked by relevance:
 
 ```
-vcc_recall({ query: "auth token" })                         // active-lineage OR search, ranked
-vcc_recall({ query: "auth token", page: 2 })                // paginated (5 results/page)
-vcc_recall({ query: "hook|inject" })                         // regex pattern
-vcc_recall({ query: "fail.*build" })                         // regex pattern
-vcc_recall({ query: "auth token", scope: "all" })           // search all lineages
+vcc_recall({ query: "auth token" })                  // active-lineage OR search, ranked
+vcc_recall({ query: "auth token", page: 2 })           // paginated (5 results/page)
+vcc_recall({ query: "hook|inject" })                  // regex pattern
+vcc_recall({ query: "auth token", scope: "all" })    // search all lineages
 ```
 
 Manual slash command:
@@ -163,37 +140,17 @@ Manual slash command:
 /pi-vcc-recall auth token scope:all
 ```
 
-### Browse
-
-Without a query, returns the last 25 entries as brief summaries:
-
-```
-vcc_recall()
-vcc_recall({ scope: "all" })  // browse recent entries across all lineages
-```
-
-### Expand
-
-Returns full untruncated content for specific indices found via search:
-
-```
-vcc_recall({ expand: [41, 42] })                 // active-lineage expand
-vcc_recall({ expand: [41, 42], scope: "all" })   // expand across all lineages
-```
-
-Typical workflow: **search → find relevant entry indices → expand those indices for full content**.
-
-> Some tool results are truncated by Pi core at save time. `expand` returns everything in the JSONL but can't recover what Pi already cut.
-
 ## Pipeline
 
-1. **Normalize** — raw Pi messages → uniform blocks (user, assistant, tool_call, tool_result, thinking)
-2. **Filter noise** — strip system messages, empty blocks
-3. **Build cut** — keep the requested tail of user turns; compact-all uses the `firstKeptEntryId: ""` sentinel
-4. **Build sections** — extract goal, file paths, blockers, preferences
-5. **Brief transcript** — chronological conversation flow, tool calls collapsed to one-liners, text truncated
-6. **Format** — render into bracketed sections + transcript
-7. **Merge** — if previous summary exists: sticky sections merge, volatile sections replace, transcript rolls
+1. **Calibrate** — estimate `charsPerToken` from `preparation.tokensBefore` vs actual message chars (falls back to heuristic `4 chars/token`)
+2. **Smart keep** — if `keep:1` tail is small (< 5k tokens), boost keep to the largest N whose tail stays ≤ 20k tokens; explicit `keep:N` is always respected
+3. **Build cut** — split at the keep boundary; everything before is summarized, the tail stays intact
+4. **Normalize** — raw Pi messages → uniform blocks (user, assistant, tool_call, tool_result, thinking)
+5. **Filter noise** — strip system messages, empty blocks
+6. **Build sections** — extract goal, file paths, commits, outstanding context, preferences
+7. **Brief transcript** — chronological conversation flow, tool calls collapsed to one-liners, text truncated
+8. **Format** — render into bracketed sections + transcript
+9. **Merge** — if previous summary exists: sticky sections dedup, volatile sections replace, transcript rolls
 
 ## Config
 
@@ -202,12 +159,16 @@ Config lives at `~/.pi/agent/pi-vcc-config.json` (auto-scaffolded on first load 
 ```json
 {
   "overrideDefaultCompaction": false,
+  "smartKeepTail": true,
+  "continueAfterThresholdCompact": true,
   "debug": false
 }
 ```
 
 - **`overrideDefaultCompaction`** *(default `false`)*: when `false`, pi-vcc only runs for `/pi-vcc`; `/compact` and auto-threshold compactions fall through to pi core. Set `true` to make pi-vcc handle all compaction paths.
-- **`debug`** *(default `false`)*: when `true`, each compaction writes detailed info to `/tmp/pi-vcc-debug.json` — message counts, cut boundary, summary preview, sections.
+- **`smartKeepTail`** *(default `true`)*: when `true`, pi-vcc boosts the default `keep:1` to the largest `N` whose tail stays ≤ 20k tokens, but only when the `keep:1` tail is already small (≤ 5k tokens). Explicit `keep:N` from the user is always respected.
+- **`continueAfterThresholdCompact`** *(default `true`)*: when `true`, pi-vcc asks the agent to continue after a successful automatic compaction (threshold or overflow), avoiding a UX cliff where the agent stops after compaction instead of continuing the task.
+- **`debug`** *(default `false`)*: when `true`, each compaction writes detailed info to `/tmp/pi-vcc-debug.json` — message counts, cut boundary, summary preview, sections, token estimate calibration.
 
 ## Related Work
 
