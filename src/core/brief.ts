@@ -109,19 +109,92 @@ const isSegmentClosingAssistant = (blocks: NormalizedBlock[], index: number): bo
 
 const BASH_CAP = 240;
 const PIPE_TAIL_RE = /\s*\|\s*(?:head|tail|sort|wc|column|tr|cut|awk|uniq|python3|node|bun)(?:\s[^|]*)?$/;
+// Preamble/boilerplate lines that carry no durable fact on their own. Dropped
+// when a script has more informative lines, so `set -euo pipefail\ngit commit`
+// renders the commit rather than the shell option.
+const TRIVIAL_LINE_RE = /^(?:set\s+[-+]|cd\s+\S+$|export\s+\w+=|(?:source|\.)\s+\S+|pwd$|true$|:$|#)/;
+// A real heredoc opener: `<<` at a command boundary — not preceded by a word
+// char or `)`, so shift ops (`8 << 20`, `Rd<<8`) are not misread — with an
+// identifier terminator starting [A-Za-z_], so numeric `<< 10` is rejected too.
+const HEREDOC_OPEN_RE = /(?<![\w)])<<-?\s*["']?([A-Za-z_]\w*)["']?/;
+// File-writer heredocs (`cat > f <<EOF`, tee, dd) already name their target, so
+// the opener alone is informative → body-only. EVERY other heredoc has a
+// content-free opener (interpreters python3/node, remote shells `ssh host <<CMD`,
+// sqlite3, ...) → we surface a one-line body preview. This denylist replaces an
+// interpreter allowlist that missed ssh/sqlite3/etc. and mis-handled heredocs
+// combined with a `>` redirect.
+const FILEWRITER_HEREDOC_RE = /(?:^|[|&;]\s*)(?:cat|tee|dd)\b/;
+const HEREDOC_BODY_CAP = 80;
+// Body lines that are pure boilerplate and make a poor preview.
+const BODY_NOISE_RE = /^(?:import\s|from\s+\S+\s+import|require\(|const\s+\w+\s*=\s*require|#|\/\/|"""|'''|"use strict"|use\s+strict|<\?php)/;
 
-/** Semantic compression: strip cd prefix, pipe tail formatting, cap length */
-const compressBash = (raw: string): string => {
-  // Flatten multi-line: take first meaningful line
-  let cmd = raw.split("\n").map(l => l.trim()).filter(Boolean)[0] ?? raw;
-  // Strip cd <path> && prefix
-  cmd = cmd.replace(/^cd\s+\S+\s*&&\s*/, "");
-  // Strip pipe tail formatting commands (up to 3 times)
+const stripCdPrefix = (line: string): string => line.replace(/^cd\s+\S+\s*&&\s*/, "").trim();
+const stripPipeTail = (line: string): string => {
+  let c = line;
   for (let i = 0; i < 3; i++) {
-    const stripped = cmd.replace(PIPE_TAIL_RE, "");
-    if (stripped === cmd) break;
-    cmd = stripped;
+    const stripped = c.replace(PIPE_TAIL_RE, "");
+    if (stripped === c) break;
+    c = stripped;
   }
+  return c.trim();
+};
+
+/**
+ * Semantic compression of a (possibly multi-line) bash command.
+ * 1. Drop heredoc BODIES (keep the opener line, e.g. `cat > f <<EOF` or
+ *    `python3 - <<PY`): the body is prose/script content that bloats the brief
+ *    without adding countable facts, while the opener still records what ran.
+ * 2. Drop trivial preamble lines (set -euo pipefail, cd-only, export, source,
+ *    comments) unless they are the ONLY line, so real work below them surfaces.
+ * 3. Strip `cd <path> &&` prefixes and pipe-tail formatting per line.
+ * 4. Join the remaining meaningful lines with `; ` and cap length.
+ */
+const compressBash = (raw: string): string => {
+  // Pass 1: keep heredoc opener lines, skip their bodies + terminators.
+  const rawLines = raw.split("\n");
+  const withoutHeredocBodies: string[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    withoutHeredocBodies.push(line);
+    const hd = line.match(HEREDOC_OPEN_RE);
+    if (!hd) continue;
+    const term = hd[1];
+    // Only treat this as a heredoc if the terminator actually appears on a later
+    // line. Otherwise the `<<` is inside a string/expression, or the body was
+    // truncated — either way leave following lines intact instead of eating them.
+    let close = -1;
+    for (let j = i + 1; j < rawLines.length; j++) {
+      if (rawLines[j].trim() === term) { close = j; break; }
+    }
+    if (close === -1) continue;
+    // File-writer heredocs (`cat > f <<EOF`) name their target → keep opener only.
+    // Every other heredoc has a content-free opener → grab the first meaningful
+    // body line as a preview (`python3 - <<PY`, `ssh host <<CMD`, `sqlite3 <<SQL`).
+    const wantPreview = !FILEWRITER_HEREDOC_RE.test(line);
+    let preview = "";
+    for (let j = i + 1; wantPreview && !preview && j < close; j++) {
+      const t = rawLines[j].trim();
+      if (t && !BODY_NOISE_RE.test(t)) preview = t;
+    }
+    if (preview) {
+      const clipped = preview.length > HEREDOC_BODY_CAP ? preview.slice(0, HEREDOC_BODY_CAP - 1) + "\u2026" : preview;
+      withoutHeredocBodies[withoutHeredocBodies.length - 1] = `${line.trim()} ${clipped}`;
+    }
+    i = close; // for-loop's i++ then skips past the terminator line
+  }
+
+  const lines = withoutHeredocBodies.map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return raw.trim();
+
+  const meaningful = lines
+    .filter(l => !TRIVIAL_LINE_RE.test(l))
+    .map(l => stripPipeTail(stripCdPrefix(l)))
+    .filter(Boolean);
+  // If everything was trivial (e.g. a bare `set -e` or `ls`), fall back to the
+  // first line so we never emit an empty marker.
+  const chosen = meaningful.length ? meaningful : [stripPipeTail(stripCdPrefix(lines[0]))].filter(Boolean);
+
+  const cmd = chosen.join("; ");
   if (cmd.length > BASH_CAP) {
     return cmd.slice(0, BASH_CAP - 3) + "...";
   }
