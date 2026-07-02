@@ -164,6 +164,10 @@ Config lives at `~/.pi/agent/pi-vcc-config.json` (auto-scaffolded on first load 
 - **`continueAfterThresholdCompact`** *(default `true`)*: when `true`, pi-vcc asks the agent to continue after a successful automatic compaction (threshold or overflow), avoiding a UX cliff where the agent stops after compaction instead of continuing the task.
 - **`debug`** *(default `false`)*: when `true`, each compaction writes detailed info to `/tmp/pi-vcc-debug.json` — message counts, cut boundary, summary preview, sections, token estimate calibration.
 
+## Benchmarks
+
+Local benchmarks / research comparing the ranked brief against the shipped pi-vcc 0.3.18 baseline (recall, fact-density, precision, size) live in [`benchmarks/README.md`](./benchmarks/README.md).
+
 ## Related Work
 
 - [VCC](https://github.com/lllyasviel/VCC) — the original transcript-preserving conversation compiler
