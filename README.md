@@ -57,21 +57,15 @@ pi -e https://github.com/sting8k/pi-vcc
 
 ## Usage
 
-Once installed, pi-vcc registers a `session_before_compact` hook.
+pi-vcc runs automatically when your context window fills up (if `overrideDefaultCompaction` is enabled), or on-demand via commands.
 
-- Run `/pi-vcc` to trigger pi-vcc compaction manually.
-- Optional keep syntax: `/pi-vcc keep:3 <prompt>` or `/pi-vcc <prompt> keep:3`.
-  - `keep:1` matches the default behavior.
-  - `keep:0` compacts everything and keeps no tail.
-- By default, `/compact` and auto-threshold compactions still go through pi core (LLM-based). Set `overrideDefaultCompaction: true` in the config to let pi-vcc handle all compaction paths.
-- To search older active-lineage history after compaction, use `vcc_recall`.
-- To intentionally search across all lineages, pass `scope:"all"` to `vcc_recall` or run `/pi-vcc-recall <query> scope:all`.
-- To search and feed results to agent yourself, run `/pi-vcc-recall <query> [page:N]`.
-  - Tip: type `/recall` and Pi will autocomplete to `/pi-vcc-recall`.
+### Compaction
 
-### How compaction works
-
-Pi splits the conversation at the **last user message** by default. Everything after — the **kept tail** — stays intact and untouched. With `keep:N`, pi-vcc keeps the last `N` user turns in that tail and summarizes everything before the cut point. If `keep:0` is requested, it compacts everything and keeps no tail.
+- **`/pi-vcc`** — manual compaction, keeps the last 1 user turn by default.
+- **`/pi-vcc keep:N [prompt]`** — keep the last `N` user turns; optional prompt is sent to the agent after compaction.
+  - `keep:1` = default, `keep:0` = compact everything, no tail.
+- By default `/compact` and auto-threshold go through Pi core. Set `overrideDefaultCompaction: true` to let pi-vcc handle all paths.
+- **Smart keep**: when enabled, pi-vcc auto-boosts `keep:1` to a larger N if the tail is small enough (< 5k tokens, capped at 20k).
 
 ### Compacted message structure
 
