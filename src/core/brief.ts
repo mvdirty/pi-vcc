@@ -116,7 +116,7 @@ const TRIVIAL_LINE_RE = /^(?:set\s+[-+]|cd\s+\S+$|export\s+\w+=|(?:source|\.)\s+
 // A real heredoc opener: `<<` at a command boundary — not preceded by a word
 // char or `)`, so shift ops (`8 << 20`, `Rd<<8`) are not misread — with an
 // identifier terminator starting [A-Za-z_], so numeric `<< 10` is rejected too.
-const HEREDOC_OPEN_RE = /(?<![\w)])<<-?\s*["']?([A-Za-z_]\w*)["']?/;
+export const HEREDOC_OPEN_RE = /(?<![\w)])<<-?\s*["']?([A-Za-z_]\w*)["']?/;
 // File-writer heredocs (`cat > f <<EOF`, tee, dd) already name their target, so
 // the opener alone is informative → body-only. EVERY other heredoc has a
 // content-free opener (interpreters python3/node, remote shells `ssh host <<CMD`,
@@ -127,6 +127,22 @@ const FILEWRITER_HEREDOC_RE = /(?:^|[|&;]\s*)(?:cat|tee|dd)\b/;
 const HEREDOC_BODY_CAP = 80;
 // Body lines that are pure boilerplate and make a poor preview.
 const BODY_NOISE_RE = /^(?:import\s|from\s+\S+\s+import|require\(|const\s+\w+\s*=\s*require|#|\/\/|"""|'''|"use strict"|use\s+strict|<\?php)/;
+
+/**
+ * If `lines[i]` opens a heredoc whose terminator actually appears on a later
+ * line, return that terminator's line index; otherwise -1. Callers use -1 to
+ * leave following lines intact instead of treating a stray `<<` (a shift op, a
+ * quoted string, or a truncated body) as a heredoc and skipping real commands.
+ */
+export const heredocCloseIndex = (lines: string[], i: number): number => {
+  const hd = lines[i].match(HEREDOC_OPEN_RE);
+  if (!hd) return -1;
+  const term = hd[1];
+  for (let j = i + 1; j < lines.length; j++) {
+    if (lines[j].trim() === term) return j;
+  }
+  return -1;
+};
 
 const stripCdPrefix = (line: string): string => line.replace(/^cd\s+\S+\s*&&\s*/, "").trim();
 const stripPipeTail = (line: string): string => {
@@ -156,16 +172,9 @@ const compressBash = (raw: string): string => {
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
     withoutHeredocBodies.push(line);
-    const hd = line.match(HEREDOC_OPEN_RE);
-    if (!hd) continue;
-    const term = hd[1];
-    // Only treat this as a heredoc if the terminator actually appears on a later
-    // line. Otherwise the `<<` is inside a string/expression, or the body was
-    // truncated — either way leave following lines intact instead of eating them.
-    let close = -1;
-    for (let j = i + 1; j < rawLines.length; j++) {
-      if (rawLines[j].trim() === term) { close = j; break; }
-    }
+    // Only treat this as a heredoc when its terminator appears downstream; a
+    // stray `<<` (string/expression or truncated body) leaves later lines intact.
+    const close = heredocCloseIndex(rawLines, i);
     if (close === -1) continue;
     // File-writer heredocs (`cat > f <<EOF`) name their target → keep opener only.
     // Every other heredoc has a content-free opener → grab the first meaningful

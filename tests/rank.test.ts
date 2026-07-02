@@ -39,6 +39,16 @@ describe("section-aware brief ranking prototype", () => {
     expect(work.score).toBeGreaterThan(scaffold.score);
   });
 
+  it("does not penalize a real command hidden after a stray '<<' with no terminator", () => {
+    const blocks: NormalizedBlock[] = [
+      // `<<NOTE` has no closing `NOTE` line, so it must not be treated as a
+      // heredoc opener that swallows the git commit below into a skipped body.
+      { kind: "bash", command: "echo \"see <<NOTE for details\"\ngit commit -m fix", exitCode: 0 },
+    ];
+    const ranked = rankBriefBlocks(blocks);
+    expect(ranked[0].reasons).not.toContain("trivial-bash");
+  });
+
   it("does not penalize a scaffolding command that failed (nonzero exit is a real fact)", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "bash", command: "cd /tmp/missing", exitCode: 1 },

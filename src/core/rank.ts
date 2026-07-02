@@ -1,6 +1,6 @@
 import type { NormalizedBlock, FileOps } from "../types";
 import { extractPath } from "./tool-args";
-import { compileBrief } from "./brief";
+import { compileBrief, heredocCloseIndex } from "./brief";
 
 export interface BriefRankingOptions {
   /** Maximum normalized blocks used to build the brief transcript. */
@@ -58,7 +58,6 @@ const MIN_SEGMENT_CLOSING_ASSISTANT_CHARS = 120;
 // pulls them in ahead of real edits/commands when spare chars appear.
 const TRIVIAL_BASH_LINE_RE =
   /^(?:set\s+[-+]|cd(?:\s+\S+)?$|export\s+\w+=|(?:source|\.)\s+\S+|pwd$|true$|:$|#|ls(?:\s|$)|echo\b|clear$|sleep\b)/;
-const HEREDOC_OPEN_RE = /<<-?\s*["']?(\w+)["']?/;
 const TRIVIAL_BASH_PENALTY = 16;
 
 const isTrivialOnlyBash = (raw: string): boolean => {
@@ -66,12 +65,11 @@ const isTrivialOnlyBash = (raw: string): boolean => {
   const kept: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     kept.push(lines[i]);
-    const hd = lines[i].match(HEREDOC_OPEN_RE);
-    if (hd) {
-      const term = hd[1];
-      i++;
-      while (i < lines.length && lines[i].trim() !== term) i++;
-    }
+    // Skip heredoc bodies (they are content, not scaffolding) using the same
+    // hardened detection as brief.ts: only skip when the terminator exists
+    // downstream, so a stray `<<` never swallows a later real command.
+    const close = heredocCloseIndex(lines, i);
+    if (close !== -1) i = close;
   }
   const meaningful = kept.map((l) => l.trim()).filter(Boolean).filter((l) => !TRIVIAL_BASH_LINE_RE.test(l));
   return meaningful.length === 0;
