@@ -496,10 +496,21 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
     // instead of the old unranked compile() (fixed 120-line cap). The token
     // budget is converted to a char budget via the session's calibrated
     // charsPerToken so the summary targets ~RANKED_BRIEF_BUDGET_TOKENS tokens
-    // regardless of content density. Audit (research/audit, 794 sessions) at
-    // this operating point: size parity with the old cap, recall +2.4pp, and
-    // better fact density vs the unbudgeted ranked path (which bloated ~60%).
+    // regardless of content density.
+    //
+    // The budget is SIZE-RELATIVE: it scales with transcript length between a
+    // floor (RANKED_BRIEF_BUDGET_TOKENS) and a ceiling (RANKED_BRIEF_CEILING_TOKENS)
+    // at RANKED_BRIEF_CHARS_PER_BLOCK per normalized block. Small/medium sessions
+    // stay at the floor (size parity with the old cap); very large transcripts --
+    // which carry far more high-value long-tail (edits, commands, tests) than the
+    // old 120-line brief could hold -- earn more budget up to the ceiling, while
+    // the ceiling keeps growth bounded (no return of the ~60% bloat).
+    // Audit (research/audit, 794 sessions, vs shipped master 0.3.18): SMALL/MED
+    // unchanged; LARGE bucket paired recall -5.0pp -> -2.3pp (median to parity),
+    // long-tail losers 100/369 -> 67/369; fact density stays ~1.4x master.
     const RANKED_BRIEF_BUDGET_TOKENS = 1100;
+    const RANKED_BRIEF_CEILING_TOKENS = 2000;
+    const RANKED_BRIEF_TOKENS_PER_BLOCK = 15;
     const summary = compileRanked({
       messages,
       previousSummary: preparation.previousSummary,
@@ -509,6 +520,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI) => {
       },
       ranking: {
         maxBriefChars: Math.round(RANKED_BRIEF_BUDGET_TOKENS * tokenEstimate.charsPerToken),
+        maxBriefCharsCeiling: Math.round(RANKED_BRIEF_CEILING_TOKENS * tokenEstimate.charsPerToken),
+        briefCharsPerBlock: Math.round(RANKED_BRIEF_TOKENS_PER_BLOCK * tokenEstimate.charsPerToken),
       },
     });
 

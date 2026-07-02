@@ -198,4 +198,39 @@ describe("section-aware brief ranking prototype", () => {
     expect(brief.length).toBeLessThanOrEqual(maxBriefChars + 400);
     expect(brief.length).toBeGreaterThan(0);
   });
+
+  it("scales the char budget with transcript length between floor and ceiling", () => {
+    // Size-relative budget: clamp(briefCharsPerBlock * blockCount, floor, ceiling).
+    const mkBlocks = (n: number): NormalizedBlock[] =>
+      Array.from({ length: n }, (_, i) => ({ kind: "assistant" as const, text: `block ${i} ` + "x".repeat(300) }));
+    const opts = { maxBlocks: 500, preserveRecentBlocks: 0, maxBriefChars: 4400, maxBriefCharsCeiling: 8000, briefCharsPerBlock: 60 };
+
+    // Small transcript (10 blocks -> 600 < floor): pinned at the floor.
+    const small = compileBrief(selectRankedBriefBlocks(mkBlocks(10), opts));
+    expect(small.length).toBeLessThanOrEqual(4400);
+
+    // Mid transcript (100 blocks -> 6000, between floor and ceiling): exceeds the floor.
+    const mid = compileBrief(selectRankedBriefBlocks(mkBlocks(100), opts));
+    expect(mid.length).toBeGreaterThan(4400);
+    expect(mid.length).toBeLessThanOrEqual(6000);
+
+    // Huge transcript (400 blocks -> 24000, clamped): never exceeds the ceiling.
+    const huge = compileBrief(selectRankedBriefBlocks(mkBlocks(400), opts));
+    expect(huge.length).toBeLessThanOrEqual(8000);
+    expect(huge.length).toBeGreaterThan(mid.length);
+  });
+
+  it("ignores the size-relative ceiling unless slope and floor are both set", () => {
+    // Ceiling alone must not change behavior: falls back to the flat maxBriefChars.
+    const blocks: NormalizedBlock[] = Array.from({ length: 200 }, (_, i) => ({
+      kind: "assistant" as const,
+      text: `block ${i} ` + "x".repeat(300),
+    }));
+    const flat = compileBrief(selectRankedBriefBlocks(blocks, { maxBlocks: 500, preserveRecentBlocks: 0, maxBriefChars: 4400 }));
+    const ceilOnly = compileBrief(
+      selectRankedBriefBlocks(blocks, { maxBlocks: 500, preserveRecentBlocks: 0, maxBriefChars: 4400, maxBriefCharsCeiling: 8000 }),
+    );
+    expect(ceilOnly.length).toBe(flat.length);
+    expect(flat.length).toBeLessThanOrEqual(4400);
+  });
 });

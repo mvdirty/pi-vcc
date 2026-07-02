@@ -15,8 +15,21 @@ export interface BriefRankingOptions {
    * until the budget is reached, and lower-value blocks are skipped rather
    * than truncating the tail. maxBlocks still applies as a safety upper bound.
    * Callers derive this from a token budget via charsPerToken.
+   * When maxBriefCharsCeiling + briefCharsPerBlock are also set, this acts as
+   * the FLOOR of a size-relative budget (see below).
    */
   maxBriefChars?: number;
+  /**
+   * Optional upper bound for a size-relative char budget. When set together
+   * with maxBriefChars (floor) and briefCharsPerBlock (slope), the effective
+   * budget becomes clamp(briefCharsPerBlock * blockCount, maxBriefChars,
+   * maxBriefCharsCeiling): larger transcripts (which carry more high-value
+   * long-tail -- edits, commands, tests) get more brief budget, while small
+   * sessions stay at the floor and this hard ceiling prevents unbounded growth.
+   */
+  maxBriefCharsCeiling?: number;
+  /** Per-block slope (chars) for the size-relative budget. Requires the ceiling. */
+  briefCharsPerBlock?: number;
 }
 
 export interface RankedBlock {
@@ -179,7 +192,19 @@ export const selectRankedBriefBlocks = (
   options: BriefRankingOptions = {},
 ): NormalizedBlock[] => {
   const maxBlocks = options.maxBlocks ?? DEFAULT_MAX_BLOCKS;
-  const maxBriefChars = options.maxBriefChars;
+  // Size-relative budget: when a ceiling + slope are provided, the effective
+  // char budget scales with transcript length (block count) between the floor
+  // (maxBriefChars) and the ceiling. Larger transcripts carry more high-value
+  // long-tail, so they earn more brief budget; small sessions stay at the floor.
+  const maxBriefChars =
+    options.maxBriefChars != null && options.maxBriefCharsCeiling != null && options.briefCharsPerBlock != null
+      ? Math.round(
+          Math.min(
+            options.maxBriefCharsCeiling,
+            Math.max(options.maxBriefChars, options.briefCharsPerBlock * blocks.length),
+          ),
+        )
+      : options.maxBriefChars;
   // Fast path: nothing to trim by count and no char budget to enforce.
   if (blocks.length <= maxBlocks && maxBriefChars == null) return blocks;
 
