@@ -3,9 +3,11 @@
 How the ranked brief compaction (`compileRanked`) is measured against the shipped
 baseline compaction (**master 0.3.18**), plus the current results.
 
-> The measurement harness itself currently lives under `research/`. It will be
-> imported into this folder later; this README documents the scoring and results
-> only.
+> [`benchmark.ts`](./benchmark.ts) in this folder is a **self-contained template**
+> you can run on your own sessions (see §8). It is a readable starting frame, not a
+> turnkey tool — the fact weights and command families are meant to be edited to
+> match your workflow. The full research harness that produced the numbers below
+> lives under `research/` (not shipped).
 
 ## 1. What is measured
 
@@ -103,6 +105,11 @@ so it is never used for the headline delta.
 
 hf-dataset, production budget (see §5), 790 non-empty sessions.
 
+**TL;DR vs 0.3.18:** same recall on the typical session (paired median +0.0pp),
+but **smaller** (median −11%, corpus −35%) and **denser** (~1.4× fact-value per
+char, duplicates near-eliminated). The only cost is a small recall dip on the
+large-session tail (mean −2.4pp, §4.2) — the exact place the brief shrinks most.
+
 ### 4.1 Headline
 
 | metric                       | baseline (master) | ranked | delta            |
@@ -197,3 +204,37 @@ tuning).
 - The firm, defensible claim is **no median regression + higher fact-density**,
   not a large recall win.
 
+## 8. Run it on your own sessions
+
+[`benchmark.ts`](./benchmark.ts) is a **template**: a single self-contained file
+(fact model, weights, and metrics inlined) that scores the ranked brief against
+the plain transcript-tail brief on your sessions. Run it from a clone of this
+repo (needs [bun](https://bun.sh) and the repo's installed dependencies):
+
+```
+bun benchmarks/benchmark.ts --sessions=~/.pi/agent/sessions --limit=200
+```
+
+It prints a baseline-vs-ranked table plus the paired recall delta, and writes
+`benchmarks/out/benchmark.{csv,json}` (gitignored) for your own analysis.
+
+| flag          | meaning                                 | default                |
+|---------------|-----------------------------------------|------------------------|
+| `--sessions`  | dir of `*.jsonl` sessions (recursed)    | `~/.pi/agent/sessions` |
+| `--limit`     | max sessions to score                   | all                    |
+| `--floor`     | min brief budget, chars (§5)            | 4400                   |
+| `--ceiling`   | max brief budget, chars (§5)            | 8000                   |
+| `--per-block` | budget slope, chars/block (§5)          | 60                     |
+| `--max-blocks`| ranked selection pool size              | 80                     |
+| `--recent`    | recent blocks always kept               | 16                     |
+| `--out`       | output dir                              | `benchmarks/out`       |
+
+It reads transcripts locally and makes **no network calls**; only aggregate
+metrics and session IDs are written to `--out`.
+
+**Adapt it to your workflow.** The two blocks worth editing are the `WEIGHTS`
+table (§3.2 — what a fact is worth to *you*) and the command-family regexes
+(§3.1 — e.g. add your test runner or task tool). The default baseline is this
+repo's own `compile()`; to reproduce a "vs a released version" number, install
+that version and import its `compile` as the baseline (see the comment at the
+top of the file).
