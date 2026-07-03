@@ -45,7 +45,26 @@ describe("token estimate", () => {
       { type: "toolCall", name: "read", input: { path: "a.ts" } },
       { type: "toolResult", content: "done" },
       { type: "image", mimeType: "image/png" },
-    ])).toBe(5 + 4 + JSON.stringify({ path: "a.ts" }).length + 4);
+    ])).toBe(5 + 4 + JSON.stringify({ path: "a.ts" }).length + 4 + 4800);
+  });
+
+  test("counts real Pi part shapes: thinking text and toolCall arguments", () => {
+    // Pi assistant content: thinking.thinking + toolCall.arguments (not .input).
+    expect(estimateMessageContentChars([
+      { type: "thinking", thinking: "reasoning", thinkingSignature: "sig" },
+      { type: "text", text: "answer" },
+      { type: "toolCall", name: "bash", arguments: { command: "ls" } },
+    ])).toBe(9 + 6 + 4 + JSON.stringify({ command: "ls" }).length);
+  });
+
+  test("ignores non-token parts and unknown shapes without throwing", () => {
+    expect(estimateMessageContentChars([
+      { type: "thinking" },              // missing thinking field → 0
+      { type: "toolCall", name: "noop" }, // name(4) + stringify("")=('""'=2) → 6
+      { type: "mystery", text: "x" },     // unknown → falls back to text → 1
+      null,                               // 0
+      "not-an-object",                    // 0
+    ] as any)).toBe(0 + 6 + 1 + 0 + 0);
   });
 
   test("estimates message content tokens through the shared char estimator", () => {
