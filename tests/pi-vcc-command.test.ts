@@ -153,7 +153,7 @@ describe("registerPiVccCommand", () => {
     expect(notifyCalls).toEqual([]);
 
     await new Promise((resolve) => setTimeout(resolve, 550));
-    expect(notifyCalls.some((call) => call.msg.includes("tail kept 1/2 user turns (2 messages,"))).toBe(true);
+    expect(notifyCalls.some((call) => call.msg.startsWith("pi-vcc: kept 1/2 turns,"))).toBe(true);
   });
 
   test("handles rejected follow-up send without throwing", async () => {

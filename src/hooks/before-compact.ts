@@ -63,15 +63,11 @@ const formatTokens = (n: number): string => {
 };
 
 export const formatCompactionStats = (stats: CompactionStats): string => {
-  const fallbackNote = stats.keepFallbackToCompactAll
-    ? stats.keepUserTurnsExplicit
-      ? `; requested keep:${stats.requestedKeepUserTurns}, compact-all fallback`
-      : "; compact-all fallback"
-    : "";
-  const smartNote = stats.smartKeepAdjusted
-    ? `; smart keep:${stats.smartFromKeep}→${stats.keptUserTurns}`
-    : "";
-  return `pi-vcc: ${stats.summarized} source entries processed; tail kept ${stats.keptUserTurns}/${stats.totalUserTurns} user turns${fallbackNote}${smartNote} (${stats.kept} messages, ~${formatTokens(stats.keptTokensEst)} tok).`;
+  const notes: string[] = [`summarized ${stats.summarized}`];
+  if (stats.smartKeepAdjusted) {
+    notes.push("smart-keep");
+  }
+  return `pi-vcc: kept ${stats.keptUserTurns}/${stats.totalUserTurns} turns, ~${formatTokens(stats.keptTokensEst)} tok (${notes.join(", ")}).`;
 };
 
 const readCompactionEventContext = (event: unknown): { reason?: CompactionReason; willRetry: boolean } => {

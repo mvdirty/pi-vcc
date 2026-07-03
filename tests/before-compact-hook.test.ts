@@ -333,7 +333,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     await invokeCompact({ type: "session_compact", fromExtension: true });
     await new Promise((resolve) => setTimeout(resolve, 550));
     expect(userMessages).toEqual(["continue"]);
-    expect(notifyCalls.some((call) => call.msg.includes("tail kept 1/2 user turns (2 messages,"))).toBe(true);
+    expect(notifyCalls.some((call) => call.msg.startsWith("pi-vcc: kept 1/2 turns,"))).toBe(true);
   });
 
   test("follow-up prompt does not block compact metrics notify", async () => {
@@ -351,7 +351,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     await new Promise((resolve) => setTimeout(resolve, 550));
 
     expect(userMessages).toEqual(["continue"]);
-    expect(notifyCalls.some((call) => call.msg.includes("tail kept 1/2 user turns (2 messages,"))).toBe(true);
+    expect(notifyCalls.some((call) => call.msg.startsWith("pi-vcc: kept 1/2 turns,"))).toBe(true);
   });
 
   test("override=true + /compact keep prefix keeps requested turns and strips follow-up", async () => {
@@ -418,8 +418,8 @@ describe("registerBeforeCompactHook: compact-all path", () => {
     expect(notifyCalls).toEqual([]);
   });
 
-  test("formatCompactionStats surfaces compact-all fallback when keep cannot be honored", () => {
-    expect(formatCompactionStats({
+  test("formatCompactionStats shows kept 0/N result for compact-all fallback without extra wording", () => {
+    const msg = formatCompactionStats({
       summarized: 2,
       kept: 4,
       keptUserTurns: 0,
@@ -428,11 +428,13 @@ describe("registerBeforeCompactHook: compact-all path", () => {
       keepUserTurnsExplicit: true,
       keepFallbackToCompactAll: true,
       keptTokensEst: 10,
-    })).toContain("tail kept 0/2 user turns; requested keep:2, compact-all fallback");
+    });
+    expect(msg).toBe("pi-vcc: kept 0/2 turns, ~10 tok (summarized 2).");
+    expect(msg).not.toMatch(/fallback/i);
   });
 
-  test("formatCompactionStats avoids requested keep wording for default compact-all fallback", () => {
-    expect(formatCompactionStats({
+  test("formatCompactionStats shows kept 0/N result for default compact-all fallback without extra wording", () => {
+    const msg = formatCompactionStats({
       summarized: 2,
       kept: 4,
       keptUserTurns: 0,
@@ -441,7 +443,25 @@ describe("registerBeforeCompactHook: compact-all path", () => {
       keepUserTurnsExplicit: false,
       keepFallbackToCompactAll: true,
       keptTokensEst: 10,
-    })).toContain("tail kept 0/1 user turns; compact-all fallback");
+    });
+    expect(msg).toBe("pi-vcc: kept 0/1 turns, ~10 tok (summarized 2).");
+    expect(msg).not.toMatch(/fallback/i);
+  });
+
+  test("formatCompactionStats appends smart-keep tag when adjusted", () => {
+    const msg = formatCompactionStats({
+      summarized: 5,
+      kept: 6,
+      keptUserTurns: 3,
+      totalUserTurns: 5,
+      requestedKeepUserTurns: 1,
+      keepUserTurnsExplicit: false,
+      keepFallbackToCompactAll: false,
+      keptTokensEst: 3200,
+      smartKeepAdjusted: true,
+      smartFromKeep: 1,
+    });
+    expect(msg).toBe("pi-vcc: kept 3/5 turns, ~3.2k tok (summarized 5, smart-keep).");
   });
 
   test("/pi-vcc keep instruction changes firstKeptEntryId and stats", () => {
