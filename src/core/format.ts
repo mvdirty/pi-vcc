@@ -6,7 +6,7 @@ const section = (title: string, items: string[]): string => {
   return `[${title}]\n${body}`;
 };
 
-const BRIEF_MAX_LINES = 120;
+export const BRIEF_MAX_LINES = 120;
 const TUI_SAFE_LINE_CHARS = 120;
 
 const wrapLine = (line: string, maxChars: number): string[] => {
@@ -50,7 +50,12 @@ export const RECALL_NOTE =
   "Use `vcc_recall` to search for prior work, decisions, and context from before this summary. " +
   "Do not redo work already completed.";
 
-export const formatSummary = (data: SectionData): string => {
+export interface FormatSummaryOptions {
+  capBriefTranscript?: boolean;
+}
+
+export const formatSummary = (data: SectionData, options: FormatSummaryOptions = {}): string => {
+  const capBriefTranscript = options.capBriefTranscript ?? true;
   const headerParts = [
     section("Session Goal", data.sessionGoal),
     section("Files And Changes", data.filesAndChanges),
@@ -64,7 +69,7 @@ export const formatSummary = (data: SectionData): string => {
     parts.push(headerParts.join("\n\n"));
   }
   if (data.briefTranscript) {
-    parts.push(capBrief(data.briefTranscript));
+    parts.push(capBriefTranscript ? capBrief(data.briefTranscript) : data.briefTranscript);
   }
 
   if (parts.length === 0) return "";

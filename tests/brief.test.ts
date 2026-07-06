@@ -19,6 +19,29 @@ describe("compileBrief", () => {
     expect(r).toContain("Let me look at the auth module.");
   });
 
+  it("preserves assistant markdown line breaks", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "assistant",
+        text: "Output nhìn tốt.\n\n```text\nblock #41: head\ntail\n```\n\n- first\n- second",
+        sourceIndex: 96,
+      },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("Output nhìn tốt.\n\n```text\nblock #41: head\ntail\n```\n\n- first\n- second (#96)");
+  });
+
+  it("preserves assistant line breaks when head/tail truncating", () => {
+    const lines = Array.from({ length: 300 }, (_, i) => `line${i} signal${i}`);
+    const blocks: NormalizedBlock[] = [
+      { kind: "assistant", text: lines.join("\n") },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("line0 signal0\nline1 signal1");
+    expect(r).toContain("...(middle truncated)...");
+    expect(r).toContain("\nline299 signal299");
+  });
+
   it("renders bash commands as user actions", () => {
     const blocks: NormalizedBlock[] = [
       { kind: "bash", command: "npm test", output: "FAIL noisy output", exitCode: 1, sourceIndex: 2 },
@@ -26,6 +49,144 @@ describe("compileBrief", () => {
     const r = compileBrief(blocks);
     expect(r).toContain("[user]\n$ npm test (#2)");
     expect(r).not.toContain("FAIL noisy output");
+  });
+
+  it("drops trivial preamble lines and surfaces the real command", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "bash",
+        command: "set -euo pipefail\ngit add README.md\ngit commit -m \"fix\"\ngit push",
+        output: "",
+        exitCode: 0,
+        sourceIndex: 3,
+      },
+    ];
+    const r = compileBrief(blocks);
+    // set -euo pipefail must not be the rendered marker; the git work must show.
+    expect(r).toContain('git commit -m "fix"');
+    expect(r).toContain("git push");
+    expect(r).not.toMatch(/\$ set -euo pipefail/);
+  });
+
+  it("keeps a bare trivial command rather than emitting an empty marker", () => {
+    const blocks: NormalizedBlock[] = [
+      { kind: "bash", command: "set -e", output: "", exitCode: 0, sourceIndex: 4 },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("$ set -e (#4)");
+  });
+
+  it("drops redirect-heredoc bodies but keeps the opener", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "bash",
+        command: "cat > /tmp/pr.md <<'EOF'\n## Summary\n- a very long PR body line\nEOF\ngh pr create --body-file /tmp/pr.md",
+        output: "",
+        exitCode: 0,
+        sourceIndex: 5,
+      },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("cat > /tmp/pr.md <<'EOF'");
+    expect(r).toContain("gh pr create --body-file /tmp/pr.md");
+    // The body content must not leak into the brief.
+    expect(r).not.toContain("a very long PR body line");
+  });
+
+  it("previews the first meaningful body line of an interpreter heredoc", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "bash",
+        command: "python3 - <<'PY'\nimport csv\ntotal = sum(1 for _ in open('data.csv'))\nprint(total)\nPY",
+        output: "",
+        exitCode: 0,
+        sourceIndex: 6,
+      },
+    ];
+    const r = compileBrief(blocks);
+    // Opener alone is content-free; a preview of the real work must appear.
+    expect(r).toContain("python3 - <<'PY'");
+    expect(r).toContain("total = sum(1 for _ in open('data.csv'))");
+    // Boilerplate import must be skipped as the preview.
+    expect(r).not.toMatch(/<<'PY' import csv/);
+  });
+
+  it("previews a non-allowlisted interpreter heredoc (sqlite3) via the denylist", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "bash",
+        command: "sqlite3 app.db <<'SQL'\nSELECT count(*) FROM users;\nSQL",
+        output: "",
+        exitCode: 0,
+        sourceIndex: 7,
+      },
+    ];
+    const r = compileBrief(blocks);
+    // sqlite3 is not a file-writer, so its content-free opener gets a preview.
+    expect(r).toContain("sqlite3 app.db <<'SQL'");
+    expect(r).toContain("SELECT count(*) FROM users;");
+  });
+
+  it("previews an ssh remote-command heredoc body", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "bash",
+        command: "ssh deploy@host <<'CMD'\nsudo systemctl restart api\nCMD",
+        output: "",
+        exitCode: 0,
+        sourceIndex: 8,
+      },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("ssh deploy@host <<'CMD'");
+    expect(r).toContain("sudo systemctl restart api");
+  });
+
+  it("previews an interpreter heredoc combined with a redirect", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "bash",
+        command: "python3 - <<'PY' > /tmp/out.sh\nprint('build config')\nPY\nbash /tmp/out.sh",
+        output: "",
+        exitCode: 0,
+        sourceIndex: 9,
+      },
+    ];
+    const r = compileBrief(blocks);
+    // The `>` redirect must not suppress the body preview (old lookahead bug).
+    expect(r).toContain("print('build config')");
+    // The command after the heredoc terminator must survive.
+    expect(r).toContain("bash /tmp/out.sh");
+  });
+
+  it("does not treat `<<` shift operators as a heredoc opener", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "bash",
+        command: "n=$((1<<10))\ngit commit -m shift",
+        output: "",
+        exitCode: 0,
+        sourceIndex: 10,
+      },
+    ];
+    const r = compileBrief(blocks);
+    // `1<<10` is a bit-shift, not a heredoc: the commit below must not be eaten.
+    expect(r).toContain("git commit -m shift");
+  });
+
+  it("does not eat following commands when a `<<` has no closing terminator", () => {
+    const blocks: NormalizedBlock[] = [
+      {
+        kind: "bash",
+        command: "echo \"see <<NOTE for details\"\nnpm run build",
+        output: "",
+        exitCode: 0,
+        sourceIndex: 11,
+      },
+    ];
+    const r = compileBrief(blocks);
+    // `<<NOTE` has no closing `NOTE` line, so it is not a heredoc opener.
+    expect(r).toContain("npm run build");
   });
 
   it("strips filler prefixes but preserves meaningful lead-ins", () => {
@@ -104,14 +265,29 @@ describe("compileBrief", () => {
     expect(r).not.toContain("word299");
   });
 
-  it("truncates long assistant text", () => {
-    const longText = Array.from({ length: 300 }, (_, i) => `word${i}`).join(" ");
+  it("truncates segment-closing assistant text with head and tail", () => {
+    const longText = Array.from({ length: 600 }, (_, i) => `word${i}`).join(" ");
     const blocks: NormalizedBlock[] = [
       { kind: "assistant", text: longText },
     ];
     const r = compileBrief(blocks);
-    expect(r).toContain("(truncated)");
-    expect(r).not.toContain("word299");
+    expect(r).toContain("...(middle truncated)...");
+    expect(r).toContain("word0");
+    expect(r).toContain("word599");
+    expect(r).not.toContain("word300");
+  });
+
+  it("truncates non-closing assistant text with head and tail", () => {
+    const longText = Array.from({ length: 600 }, (_, i) => `word${i}`).join(" ");
+    const blocks: NormalizedBlock[] = [
+      { kind: "assistant", text: longText },
+      { kind: "tool_call", name: "Read", args: { file_path: "a.ts" } },
+    ];
+    const r = compileBrief(blocks);
+    expect(r).toContain("...(middle truncated)...");
+    expect(r).toContain("word0");
+    expect(r).toContain("word599");
+    expect(r).not.toContain("word300");
   });
 
   it("renders a realistic conversation flow", () => {

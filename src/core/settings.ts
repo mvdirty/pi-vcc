@@ -19,12 +19,30 @@ export interface PiVccSettings {
    * falls back to pi core's default LLM-based compaction.
    */
   overrideDefaultCompaction: boolean;
+  /**
+   * When true (default), pi-vcc boosts the default keep-tail when the current
+   * keep:1 tail is small enough. Specifically: if the estimated tail for keep:1
+   * is <= MIN_SMART_TAIL_TOKENS (5k), increase keep up to the largest N whose
+   * tail stays <= MAX_SMART_TAIL_TOKENS (25k). Explicit `keep:N` from the user
+   * is always respected and never adjusted.
+   */
+  smartKeepTail: boolean;
+  /**
+   * When true (default), pi-vcc asks the agent to continue after a successful
+   * automatic compaction (threshold, or overflow after the assistant already
+   * finished with stop). This avoids a UX cliff where the agent finishes a response,
+   * immediately compacts, and then stops instead of continuing the task.
+   * Overflow retry is still owned by pi-core via willRetry.
+   */
+  continueAfterThresholdCompact: boolean;
   /** Write debug snapshot to /tmp/pi-vcc-debug.json on each compaction. */
   debug: boolean;
 }
 
 export const DEFAULT_SETTINGS: PiVccSettings = {
   overrideDefaultCompaction: false,
+  smartKeepTail: true,
+  continueAfterThresholdCompact: true,
   debug: false,
 };
 

@@ -9,6 +9,7 @@ import { buildBriefSections, stringifyBrief } from "./brief";
 
 export interface BuildSectionsInput {
   blocks: NormalizedBlock[];
+  briefBlocks?: NormalizedBlock[];
 }
 
 const BLOCKER_RE =
@@ -56,7 +57,7 @@ const formatFileActivity = (blocks: NormalizedBlock[]): string[] => {
 
 export const buildSections = (input: BuildSectionsInput): SectionData => {
   const { blocks } = input;
-  const briefSections = buildBriefSections(blocks);
+  const briefSections = buildBriefSections(input.briefBlocks ?? blocks);
   const sessionGoal = extractGoals(blocks);
   const userPreferences = dedupPreferencesAgainstGoals(
     extractPreferences(blocks),
