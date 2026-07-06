@@ -162,7 +162,7 @@ describe("resolveSmartKeepUserTurns", () => {
     expect(r.smartAdjusted).toBe(false);
   });
 
-  test("default thresholds (5k/20k): small tail → boost before compact-all boundary", () => {
+  test("default thresholds (5k/25k): small tail → boost before compact-all boundary", () => {
     // Tiny content: keep:1 tail way below 5k.
     const entries = [
       msg("u1", "user", "hi"),

@@ -258,7 +258,7 @@ export function buildOwnCut(branchEntries: any[], keepUserTurns = 1): OwnCutResu
 // ── smart keep-tail: boost default keep when tail is small ──
 
 export const MIN_SMART_TAIL_TOKENS = 5_000;
-export const MAX_SMART_TAIL_TOKENS = 20_000;
+export const MAX_SMART_TAIL_TOKENS = 25_000;
 
 export interface ResolveSmartKeepOptions {
   branchEntries: any[];
